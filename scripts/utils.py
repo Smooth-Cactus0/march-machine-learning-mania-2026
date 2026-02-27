@@ -59,7 +59,7 @@ def load_sample_submission(stage: int = 2) -> pd.DataFrame:
 def brier_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Brier score = MSE of probability predictions. Lower is better."""
     y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.asarray(y_pred, dtype=float)
+    y_pred = np.clip(np.asarray(y_pred, dtype=float), 0.0, 1.0)
     return float(np.mean((y_pred - y_true) ** 2))
 
 # ── Cross-validation ──────────────────────────────────────────────────────────
@@ -95,6 +95,7 @@ def make_matchup_df(tourney_df: pd.DataFrame, features_df: pd.DataFrame) -> pd.D
     feat_indexed = features_df.set_index(["Season", "TeamID"])
 
     rows = []
+    skipped = 0
     for _, game in tourney_df.iterrows():
         season = game["Season"]
         w_id = game["WTeamID"]
@@ -103,9 +104,8 @@ def make_matchup_df(tourney_df: pd.DataFrame, features_df: pd.DataFrame) -> pd.D
         t2_id = max(w_id, l_id)
         label = 1 if w_id == t1_id else 0
 
-        if (season, t1_id) not in feat_indexed.index:
-            continue
-        if (season, t2_id) not in feat_indexed.index:
+        if (season, t1_id) not in feat_indexed.index or (season, t2_id) not in feat_indexed.index:
+            skipped += 1
             continue
 
         t1_feats = feat_indexed.loc[(season, t1_id), feat_cols]
@@ -113,6 +113,12 @@ def make_matchup_df(tourney_df: pd.DataFrame, features_df: pd.DataFrame) -> pd.D
         diffs = (t1_feats - t2_feats).values
         rows.append([season, t1_id, t2_id] + list(diffs) + [label])
 
+    if skipped:
+        import warnings
+        warnings.warn(
+            f"make_matchup_df: skipped {skipped} games due to missing features",
+            stacklevel=2,
+        )
     diff_cols = [f"{c}_diff" for c in feat_cols]
     return pd.DataFrame(rows, columns=["Season", "Team1ID", "Team2ID"] + diff_cols + ["Label"])
 
@@ -123,6 +129,7 @@ def log_benchmark(model: str, gender: str, cv_brier: float, notes: str = "") -> 
     Append a row to results/benchmarks.csv and regenerate BENCHMARKS.md.
     Thread-safe only for sequential calls (no file locking).
     """
+    RESULTS.mkdir(parents=True, exist_ok=True)
     benchmarks_csv = RESULTS / "benchmarks.csv"
     benchmarks_md = ROOT / "BENCHMARKS.md"
 
@@ -136,7 +143,10 @@ def log_benchmark(model: str, gender: str, cv_brier: float, notes: str = "") -> 
         "timestamp": timestamp,
     }])
 
-    existing = pd.read_csv(benchmarks_csv)
+    if benchmarks_csv.exists():
+        existing = pd.read_csv(benchmarks_csv)
+    else:
+        existing = pd.DataFrame(columns=["model", "gender", "cv_brier", "notes", "timestamp"])
     updated = pd.concat([existing, new_row], ignore_index=True)
     updated.to_csv(benchmarks_csv, index=False)
 
