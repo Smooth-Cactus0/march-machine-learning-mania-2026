@@ -216,6 +216,283 @@ def build_seed_features(gender: str) -> pd.DataFrame:
     return seeds[["Season", "TeamID", "SeedNum", "IsFirstFour"]].copy()
 
 
+# ── Section 5: Location features (home/neutral/away splits) ───────────────────
+
+def build_location_features(gender: str) -> pd.DataFrame:
+    """
+    Compute per-(Season, TeamID) location-split features:
+      - neutral_off_eff, neutral_def_eff, neutral_net_eff: efficiency at neutral sites
+      - neutral_games: count of neutral site games (context only, not a model feature)
+      - home_win_pct: win% in home games (NaN if 0 home games)
+      - away_win_pct: win% in away games (NaN if 0 away games)
+      - neutral_win_pct: win% in neutral games (NaN if 0 neutral games)
+    """
+    det = utils.load_detailed(gender)
+    comp = utils.load_compact(gender)
+
+    # ── Part A: Neutral-site efficiency from detailed results ─────────────────
+
+    det_neutral = det[det["WLoc"] == "N"].copy()
+
+    # Winner perspective at neutral sites
+    win_neutral = pd.DataFrame({
+        "Season":  det_neutral["Season"],
+        "TeamID":  det_neutral["WTeamID"],
+        "own_pts": det_neutral["WScore"],
+        "opp_pts": det_neutral["LScore"],
+        "FGA":     det_neutral["WFGA"],
+        "OR":      det_neutral["WOR"],
+        "TO":      det_neutral["WTO"],
+        "FTA":     det_neutral["WFTA"],
+        "oFGA":    det_neutral["LFGA"],
+        "oOR":     det_neutral["LOR"],
+        "oTO":     det_neutral["LTO"],
+        "oFTA":    det_neutral["LFTA"],
+    })
+
+    # Loser perspective at neutral sites
+    loss_neutral = pd.DataFrame({
+        "Season":  det_neutral["Season"],
+        "TeamID":  det_neutral["LTeamID"],
+        "own_pts": det_neutral["LScore"],
+        "opp_pts": det_neutral["WScore"],
+        "FGA":     det_neutral["LFGA"],
+        "OR":      det_neutral["LOR"],
+        "TO":      det_neutral["LTO"],
+        "FTA":     det_neutral["LFTA"],
+        "oFGA":    det_neutral["WFGA"],
+        "oOR":     det_neutral["WOR"],
+        "oTO":     det_neutral["WTO"],
+        "oFTA":    det_neutral["WFTA"],
+    })
+
+    neutral_games_det = pd.concat([win_neutral, loss_neutral], ignore_index=True)
+
+    sum_cols = ["own_pts", "opp_pts", "FGA", "OR", "TO", "FTA", "oFGA", "oOR", "oTO", "oFTA"]
+    neutral_agg = neutral_games_det.groupby(["Season", "TeamID"])[sum_cols].sum().reset_index()
+
+    own_poss = neutral_agg["FGA"]  - neutral_agg["OR"]  + neutral_agg["TO"]  + 0.44 * neutral_agg["FTA"]
+    opp_poss = neutral_agg["oFGA"] - neutral_agg["oOR"] + neutral_agg["oTO"] + 0.44 * neutral_agg["oFTA"]
+    own_poss = own_poss.replace(0, np.nan)
+    opp_poss = opp_poss.replace(0, np.nan)
+
+    neutral_agg["neutral_off_eff"] = neutral_agg["own_pts"] / own_poss * 100
+    neutral_agg["neutral_def_eff"] = neutral_agg["opp_pts"] / opp_poss * 100
+    neutral_agg["neutral_net_eff"] = neutral_agg["neutral_off_eff"] - neutral_agg["neutral_def_eff"]
+
+    # Count neutral games per team (each game appears twice in concat, so count games here)
+    neutral_game_counts = (
+        neutral_games_det.groupby(["Season", "TeamID"])
+        .size()
+        .reset_index(name="neutral_games")
+    )
+
+    neutral_eff = neutral_agg[["Season", "TeamID", "neutral_off_eff", "neutral_def_eff", "neutral_net_eff"]].merge(
+        neutral_game_counts, on=["Season", "TeamID"], how="left"
+    )
+
+    # ── Part B: Win% by location from compact results ─────────────────────────
+
+    # Winner perspective: determine this team's location
+    # WLoc = 'H' means WTeamID was at home, 'A' means WTeamID was away, 'N' neutral
+    win_comp = pd.DataFrame({
+        "Season": comp["Season"],
+        "TeamID": comp["WTeamID"],
+        "won":    1,
+        # From winner's perspective: WLoc directly describes their location
+        "loc":    comp["WLoc"],
+    })
+
+    # Loser perspective: invert H/A for the losing team; N stays N
+    loc_map = {"H": "A", "A": "H", "N": "N"}
+    loss_comp = pd.DataFrame({
+        "Season": comp["Season"],
+        "TeamID": comp["LTeamID"],
+        "won":    0,
+        "loc":    comp["WLoc"].map(loc_map),
+    })
+
+    all_comp = pd.concat([win_comp, loss_comp], ignore_index=True)
+
+    # Aggregate per (Season, TeamID, loc): games and wins
+    loc_grp = all_comp.groupby(["Season", "TeamID", "loc"]).agg(
+        games=("won", "count"),
+        wins=("won", "sum"),
+    ).reset_index()
+
+    # Pivot so we have separate columns for H, A, N
+    loc_pivot = loc_grp.pivot_table(
+        index=["Season", "TeamID"],
+        columns="loc",
+        values=["games", "wins"],
+        aggfunc="first",
+    ).reset_index()
+    loc_pivot.columns = [
+        "_".join(c).strip("_") if c[1] else c[0]
+        for c in loc_pivot.columns
+    ]
+
+    # Compute win percentages — NaN if no games at that location
+    for loc_code, col_suffix in [("H", "home"), ("A", "away"), ("N", "neutral")]:
+        games_col = f"games_{loc_code}"
+        wins_col  = f"wins_{loc_code}"
+        pct_col   = f"{col_suffix}_win_pct"
+        if games_col in loc_pivot.columns and wins_col in loc_pivot.columns:
+            loc_pivot[pct_col] = np.where(
+                loc_pivot[games_col] > 0,
+                loc_pivot[wins_col] / loc_pivot[games_col],
+                np.nan,
+            )
+        else:
+            loc_pivot[pct_col] = np.nan
+
+    win_pct_cols = ["Season", "TeamID", "home_win_pct", "away_win_pct", "neutral_win_pct"]
+    win_pcts = loc_pivot[[c for c in win_pct_cols if c in loc_pivot.columns]].copy()
+
+    # ── Part C: Merge neutral efficiency + win pcts ───────────────────────────
+
+    # Start with all unique (Season, TeamID) from compact results (broader coverage)
+    all_teams = all_comp[["Season", "TeamID"]].drop_duplicates()
+    result = all_teams.merge(neutral_eff, on=["Season", "TeamID"], how="left")
+    result = result.merge(win_pcts, on=["Season", "TeamID"], how="left")
+
+    return result[["Season", "TeamID",
+                   "neutral_off_eff", "neutral_def_eff", "neutral_net_eff",
+                   "neutral_games",
+                   "home_win_pct", "away_win_pct", "neutral_win_pct"]].copy()
+
+
+# ── Section 6: Conference quality and strength of schedule ────────────────────
+
+POWER_CONFS = {
+    'sec', 'acc', 'big_ten', 'big_east', 'big_twelve',
+    'pac_ten', 'pac_twelve', 'b10', 'b12', 'be'
+}
+
+
+def build_conference_features(gender: str, massey_df: pd.DataFrame = None) -> pd.DataFrame:
+    """
+    Compute per-(Season, TeamID):
+      - is_power_conf: 1 if team's conference is a power conf, 0 otherwise
+      - sos_massey: mean massey_composite of all regular season opponents
+        (Men's 2003+ only; Women's and pre-2003 Men's get NaN)
+    """
+    prefix = "M" if gender == "M" else "W"
+    tc = pd.read_csv(utils.DATA / f"{prefix}TeamConferences.csv")
+
+    # is_power_conf
+    tc["is_power_conf"] = tc["ConfAbbrev"].isin(POWER_CONFS).astype(int)
+    conf_feat = tc[["Season", "TeamID", "is_power_conf"]].copy()
+
+    # sos_massey: for each team-season, find opponents and average their massey_composite
+    if massey_df is not None and gender == "M":
+        comp = utils.load_compact(gender)
+
+        # Build opponent lookup: for each game, each team's opponent
+        win_side = comp[["Season", "WTeamID", "LTeamID"]].rename(
+            columns={"WTeamID": "TeamID", "LTeamID": "OppID"}
+        )
+        loss_side = comp[["Season", "LTeamID", "WTeamID"]].rename(
+            columns={"LTeamID": "TeamID", "WTeamID": "OppID"}
+        )
+        matchups = pd.concat([win_side, loss_side], ignore_index=True)
+
+        # Join massey_composite for each opponent
+        massey_lookup = massey_df[["Season", "TeamID", "massey_composite"]].rename(
+            columns={"TeamID": "OppID", "massey_composite": "opp_massey"}
+        )
+        matchups = matchups.merge(massey_lookup, on=["Season", "OppID"], how="left")
+
+        # Average opponent massey per (Season, TeamID)
+        sos = (
+            matchups.groupby(["Season", "TeamID"])["opp_massey"]
+            .mean()
+            .reset_index(name="sos_massey")
+        )
+        conf_feat = conf_feat.merge(sos, on=["Season", "TeamID"], how="left")
+    else:
+        conf_feat["sos_massey"] = np.nan
+
+    return conf_feat
+
+
+# ── Section 7: Conference tournament performance ──────────────────────────────
+
+def build_conf_tourney_features(gender: str) -> pd.DataFrame:
+    """
+    Compute per-(Season, TeamID):
+      - conf_tourney_wins: number of conference tournament wins that season
+      - conf_tourney_champion: 1 if team won the conference tournament, else 0
+    Teams that didn't participate will be absent (becomes 0 after fillna in merge).
+    """
+    prefix = "M" if gender == "M" else "W"
+    ct_path = utils.DATA / f"{prefix}ConferenceTourneyGames.csv"
+
+    if not ct_path.exists():
+        # Return empty structure if file missing
+        return pd.DataFrame(columns=["Season", "TeamID", "conf_tourney_wins", "conf_tourney_champion"])
+
+    ct = pd.read_csv(ct_path)
+
+    # conf_tourney_wins: count wins per (Season, TeamID)
+    wins = (
+        ct.groupby(["Season", "WTeamID"])
+        .size()
+        .reset_index(name="conf_tourney_wins")
+        .rename(columns={"WTeamID": "TeamID"})
+    )
+
+    # conf_tourney_champion: winner of the last game (highest DayNum) per (Season, ConfAbbrev)
+    last_game_idx = ct.groupby(["Season", "ConfAbbrev"])["DayNum"].idxmax()
+    finals = ct.loc[last_game_idx, ["Season", "WTeamID"]].copy()
+    finals = finals.rename(columns={"WTeamID": "TeamID"})
+    finals["conf_tourney_champion"] = 1
+    # Deduplicate in case of ties on DayNum (rare edge case)
+    finals = finals.drop_duplicates(subset=["Season", "TeamID"])
+
+    # Merge wins and champion flag
+    result = wins.merge(finals, on=["Season", "TeamID"], how="outer")
+    result["conf_tourney_wins"] = result["conf_tourney_wins"].fillna(0).astype(int)
+    result["conf_tourney_champion"] = result["conf_tourney_champion"].fillna(0).astype(int)
+
+    return result[["Season", "TeamID", "conf_tourney_wins", "conf_tourney_champion"]].copy()
+
+
+# ── Section 8: Coach continuity ───────────────────────────────────────────────
+
+def build_coach_features() -> pd.DataFrame:
+    """
+    Compute per-(Season, TeamID) coach continuity features (Men's only):
+      - coach_years_at_school: seasons the primary coach has been at this school
+        (1 = first year)
+      - is_new_coach: 1 if coach_years_at_school == 1, else 0
+
+    Primary coach = the coach whose tenure spans the most of the season
+    (highest LastDayNum - FirstDayNum).
+    """
+    coaches = pd.read_csv(utils.DATA / "MTeamCoaches.csv")
+
+    # For each (Season, TeamID), pick the coach with the longest tenure span
+    coaches["tenure_span"] = coaches["LastDayNum"] - coaches["FirstDayNum"]
+    primary = (
+        coaches
+        .sort_values("tenure_span", ascending=False)
+        .drop_duplicates(subset=["Season", "TeamID"], keep="first")
+        [["Season", "TeamID", "CoachName"]]
+        .copy()
+    )
+
+    # For each (CoachName, TeamID), compute cumulative seasons at that school.
+    # Sort by Season and assign rank within each (CoachName, TeamID) group.
+    primary = primary.sort_values(["CoachName", "TeamID", "Season"])
+    primary["coach_years_at_school"] = (
+        primary.groupby(["CoachName", "TeamID"]).cumcount() + 1
+    )
+    primary["is_new_coach"] = (primary["coach_years_at_school"] == 1).astype(int)
+
+    return primary[["Season", "TeamID", "coach_years_at_school", "is_new_coach"]].copy()
+
+
 # ── Section 4: Merge and save ─────────────────────────────────────────────────
 
 def build_and_save(gender: str) -> pd.DataFrame:
@@ -246,7 +523,41 @@ def build_and_save(gender: str) -> pd.DataFrame:
     # Fix IsFirstFour dtype: True→1, False→0, NaN→<NA> (nullable Int8 for parquet)
     df["IsFirstFour"] = df["IsFirstFour"].astype("boolean").astype("Int8")
 
-    # 4. Verify uniqueness
+    # 4. Location features (home/neutral/away splits)
+    location_feats = build_location_features(gender)
+    print(f"  Location features:   {location_feats.shape}")
+    df = df.merge(location_feats, on=["Season", "TeamID"], how="left")
+
+    # 5. Conference quality + SOS
+    conf_feats = build_conference_features(
+        gender,
+        massey_df=massey_feats if gender == "M" else None
+    )
+    print(f"  Conference features: {conf_feats.shape}")
+    df = df.merge(conf_feats, on=["Season", "TeamID"], how="left")
+
+    # Women's: add NaN sos_massey column if not present
+    if "sos_massey" not in df.columns:
+        df["sos_massey"] = np.nan
+
+    # 6. Conference tournament features
+    conf_tourney_feats = build_conf_tourney_features(gender)
+    print(f"  Conf tourney features: {conf_tourney_feats.shape}")
+    df = df.merge(conf_tourney_feats, on=["Season", "TeamID"], how="left")
+    # Teams that didn't play in conf tourney get 0 wins and 0 champion
+    df["conf_tourney_wins"]     = df["conf_tourney_wins"].fillna(0).astype(int)
+    df["conf_tourney_champion"] = df["conf_tourney_champion"].fillna(0).astype(int)
+
+    # 7. Coach features (Men's only)
+    if gender == "M":
+        coach_feats = build_coach_features()
+        print(f"  Coach features:      {coach_feats.shape}")
+        df = df.merge(coach_feats, on=["Season", "TeamID"], how="left")
+    else:
+        df["coach_years_at_school"] = np.nan
+        df["is_new_coach"]          = np.nan
+
+    # 8. Verify uniqueness
     n_dupes = df.duplicated(subset=["Season", "TeamID"]).sum()
     if n_dupes > 0:
         print(f"  WARNING: {n_dupes} duplicate (Season, TeamID) rows — dropping extras")
@@ -254,12 +565,12 @@ def build_and_save(gender: str) -> pd.DataFrame:
 
     df = df.sort_values(["Season", "TeamID"]).reset_index(drop=True)
 
-    # 5. Save
+    # 9. Save
     utils.FEATURES.mkdir(parents=True, exist_ok=True)
     out_path = utils.FEATURES / f"team_features_{gender}.parquet"
     df.to_parquet(out_path, index=False)
 
-    # 6. Summary
+    # 10. Summary
     season_min = df["Season"].min()
     season_max = df["Season"].max()
     nan_counts = df.isnull().sum()
