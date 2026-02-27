@@ -130,6 +130,8 @@ def build_efficiency_features(gender: str) -> pd.DataFrame:
     own_poss = agg["FGA"]  - agg["OR"]  + agg["TO"]  + 0.44 * agg["FTA"]
     opp_poss = agg["oFGA"] - agg["oOR"] + agg["oTO"] + 0.44 * agg["oFTA"]
 
+    own_poss = own_poss.replace(0, np.nan)
+    opp_poss = opp_poss.replace(0, np.nan)
     agg["off_eff"]  = agg["own_pts"] / own_poss * 100
     agg["def_eff"]  = agg["opp_pts"] / opp_poss * 100
     agg["net_eff"]  = agg["off_eff"] - agg["def_eff"]
@@ -240,6 +242,9 @@ def build_and_save(gender: str) -> pd.DataFrame:
     # 3. Seed features
     seed_feats = build_seed_features(gender)
     df = df.merge(seed_feats, on=["Season", "TeamID"], how="left")
+
+    # Fix IsFirstFour dtype: True→1, False→0, NaN→<NA> (nullable Int8 for parquet)
+    df["IsFirstFour"] = df["IsFirstFour"].astype("boolean").astype("Int8")
 
     # 4. Verify uniqueness
     n_dupes = df.duplicated(subset=["Season", "TeamID"]).sum()

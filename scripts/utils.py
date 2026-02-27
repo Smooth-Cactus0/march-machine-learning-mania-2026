@@ -77,50 +77,53 @@ def get_cv_seasons(tourney_df: pd.DataFrame, n_seasons: int = 10) -> list:
 def make_matchup_df(tourney_df: pd.DataFrame, features_df: pd.DataFrame) -> pd.DataFrame:
     """
     Build a matchup-level DataFrame for model training.
-
-    For each tournament game, creates one row with:
-    - Team1 = lower TeamID, Team2 = higher TeamID
-    - All feature columns as diffs: feat_diff = team1_feat - team2_feat
-    - Label = 1 if Team1 (lower ID) won, 0 if Team2 won
-    - Season column retained
-
-    Args:
-        tourney_df: output of load_tourney()
-        features_df: output of feature engineering, indexed by (Season, TeamID)
-
-    Returns:
-        DataFrame with columns: Season, Team1ID, Team2ID, *feat_diff_cols, Label
+    Team1 = lower TeamID, Team2 = higher TeamID.
+    Feature columns are diffs: team1_feat - team2_feat.
+    Label = 1 if Team1 (lower ID) won, 0 if Team2 won.
     """
     feat_cols = [c for c in features_df.columns if c not in ("Season", "TeamID")]
-    feat_indexed = features_df.set_index(["Season", "TeamID"])
 
-    rows = []
-    skipped = 0
-    for _, game in tourney_df.iterrows():
-        season = game["Season"]
-        w_id = game["WTeamID"]
-        l_id = game["LTeamID"]
-        t1_id = min(w_id, l_id)
-        t2_id = max(w_id, l_id)
-        label = 1 if w_id == t1_id else 0
+    # Assign Team1 (lower ID) and Team2 (higher ID)
+    df = tourney_df.copy()
+    df["Team1ID"] = df[["WTeamID", "LTeamID"]].min(axis=1)
+    df["Team2ID"] = df[["WTeamID", "LTeamID"]].max(axis=1)
+    df["Label"]   = (df["WTeamID"] == df["Team1ID"]).astype(int)
 
-        if (season, t1_id) not in feat_indexed.index or (season, t2_id) not in feat_indexed.index:
-            skipped += 1
-            continue
+    # Merge features for Team1
+    feat = features_df.set_index(["Season", "TeamID"])
+    t1 = (df[["Season", "Team1ID"]]
+          .rename(columns={"Team1ID": "TeamID"})
+          .join(feat, on=["Season", "TeamID"])
+          .drop(columns="TeamID"))
+    t1.columns = [f"{c}_t1" for c in t1.columns] if False else list(t1.columns)  # keep plain names
 
-        t1_feats = feat_indexed.loc[(season, t1_id), feat_cols]
-        t2_feats = feat_indexed.loc[(season, t2_id), feat_cols]
-        diffs = (t1_feats - t2_feats).values
-        rows.append([season, t1_id, t2_id] + list(diffs) + [label])
+    # Merge features for Team2
+    t2 = (df[["Season", "Team2ID"]]
+          .rename(columns={"Team2ID": "TeamID"})
+          .join(feat, on=["Season", "TeamID"])
+          .drop(columns="TeamID"))
 
+    # Compute diffs
+    diff_data = {}
+    for c in feat_cols:
+        diff_data[f"{c}_diff"] = t1[c].values - t2[c].values
+
+    result = df[["Season", "Team1ID", "Team2ID", "Label"]].copy()
+    for col, vals in diff_data.items():
+        result[col] = vals
+
+    # Drop rows where any feature is NaN (team not in features_df)
+    n_before = len(result)
+    result = result.dropna(subset=[f"{c}_diff" for c in feat_cols])
+    skipped = n_before - len(result)
     if skipped:
         import warnings
         warnings.warn(
-            f"make_matchup_df: skipped {skipped} games due to missing features",
+            f"make_matchup_df: dropped {skipped} games due to missing features",
             stacklevel=2,
         )
-    diff_cols = [f"{c}_diff" for c in feat_cols]
-    return pd.DataFrame(rows, columns=["Season", "Team1ID", "Team2ID"] + diff_cols + ["Label"])
+
+    return result.reset_index(drop=True)
 
 # ── Benchmark logging ─────────────────────────────────────────────────────────
 
