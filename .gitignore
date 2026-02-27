@@ -1,0 +1,9 @@
+features/*.parquet
+models/
+march-machine-learning-mania-2026/
+march-machine-learning-mania-2026.zip
+__pycache__/
+*.pyc
+.DS_Store
+*.egg-info/
+.ipynb_checkpoints/
