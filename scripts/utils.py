@@ -95,8 +95,6 @@ def make_matchup_df(tourney_df: pd.DataFrame, features_df: pd.DataFrame) -> pd.D
           .rename(columns={"Team1ID": "TeamID"})
           .join(feat, on=["Season", "TeamID"])
           .drop(columns="TeamID"))
-    t1.columns = [f"{c}_t1" for c in t1.columns] if False else list(t1.columns)  # keep plain names
-
     # Merge features for Team2
     t2 = (df[["Season", "Team2ID"]]
           .rename(columns={"Team2ID": "TeamID"})
@@ -151,6 +149,8 @@ def log_benchmark(model: str, gender: str, cv_brier: float, notes: str = "") -> 
     else:
         existing = pd.DataFrame(columns=["model", "gender", "cv_brier", "notes", "timestamp"])
     updated = pd.concat([existing, new_row], ignore_index=True)
+    updated = updated.drop_duplicates(subset=["model", "gender"], keep="last")
+    updated = updated.sort_values(["gender", "model"]).reset_index(drop=True)
     updated.to_csv(benchmarks_csv, index=False)
 
     # Regenerate BENCHMARKS.md
