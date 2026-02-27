@@ -36,29 +36,17 @@ def make_seed_win_rates():
         seeds = utils.load_seeds(gender)
         seed_map = seeds.set_index(["Season", "TeamID"])["SeedNum"]
 
-        wins = {}
-        losses = {}
+        df = tourney.copy()
+        df["WSeedNum"] = df.set_index(["Season", "WTeamID"]).index.map(seed_map)
+        df["LSeedNum"] = df.set_index(["Season", "LTeamID"]).index.map(seed_map)
+        df = df.dropna(subset=["WSeedNum", "LSeedNum"])
 
-        for _, row in tourney.iterrows():
-            season = row["Season"]
-            w_id = row["WTeamID"]
-            l_id = row["LTeamID"]
-
-            w_seed = seed_map.get((season, w_id), None)
-            l_seed = seed_map.get((season, l_id), None)
-
-            if w_seed is not None:
-                wins[w_seed] = wins.get(w_seed, 0) + 1
-            if l_seed is not None:
-                losses[l_seed] = losses.get(l_seed, 0) + 1
+        wins = df.groupby("WSeedNum").size()
+        losses = df.groupby("LSeedNum").size()
+        total = wins.add(losses, fill_value=0)
 
         seeds_range = range(1, 17)
-        win_rates = []
-        for s in seeds_range:
-            w = wins.get(s, 0)
-            l = losses.get(s, 0)
-            total = w + l
-            win_rates.append(w / total if total > 0 else 0.0)
+        win_rates = (wins / total).reindex(seeds_range, fill_value=0.0).tolist()
 
         colors = ["#4caf50" if r >= 0.5 else "#fa8072" for r in win_rates]
         bars = ax.bar(list(seeds_range), win_rates, color=colors, edgecolor="white", linewidth=0.5)
@@ -102,7 +90,7 @@ def make_margin_distribution():
 
     ax.set_title("Tournament Winning Margin Distribution (1985–2025)", fontsize=14, fontweight="bold")
     ax.set_xlabel("Winning Margin (points)", fontsize=12)
-    ax.set_ylabel("Games", fontsize=12)
+    ax.set_ylabel("Number of Games", fontsize=12)
     ax.legend(fontsize=11)
 
     plt.tight_layout()
@@ -125,9 +113,9 @@ def make_upset_rate_by_round():
             return "First Four"
         elif day in (136, 137):
             return "Round of 64"
-        elif day in (138, 139):
+        elif day in (138, 139, 140):       # 140 = 2021 bubble R32 overflow
             return "Round of 32"
-        elif day in (143, 144, 145, 146):
+        elif day in (143, 144, 145, 146, 147, 148):  # 147-148 = 2021 Elite Eight
             return "Sweet 16 / Elite 8"
         elif day == 152:
             return "Final Four"
@@ -144,30 +132,18 @@ def make_upset_rate_by_round():
         "Championship",
     ]
 
-    round_upsets = {r: {"upsets": 0, "total": 0} for r in round_order}
+    df = tourney.copy()
+    df["Round"] = df["DayNum"].map(day_to_round)
+    df = df[df["Round"].notna() & (df["Round"] != "First Four")]
 
-    for _, row in tourney.iterrows():
-        season = row["Season"]
-        day = row["DayNum"]
-        round_name = day_to_round(day)
-        if round_name is None or round_name == "First Four":
-            continue
+    df["WSeedNum"] = df.set_index(["Season", "WTeamID"]).index.map(seed_map)
+    df["LSeedNum"] = df.set_index(["Season", "LTeamID"]).index.map(seed_map)
+    df = df.dropna(subset=["WSeedNum", "LSeedNum"])
 
-        w_seed = seed_map.get((season, row["WTeamID"]), None)
-        l_seed = seed_map.get((season, row["LTeamID"]), None)
-        if w_seed is None or l_seed is None:
-            continue
-
-        round_upsets[round_name]["total"] += 1
-        # Upset: winner has a higher seed number than loser
-        if w_seed > l_seed:
-            round_upsets[round_name]["upsets"] += 1
-
-    upset_rates = []
-    for r in round_order:
-        total = round_upsets[r]["total"]
-        upsets = round_upsets[r]["upsets"]
-        upset_rates.append(100.0 * upsets / total if total > 0 else 0.0)
+    df["upset"] = (df["WSeedNum"] > df["LSeedNum"]).astype(int)
+    grouped = df.groupby("Round")["upset"].agg(["sum", "count"])
+    grouped = grouped.reindex(round_order, fill_value=0)
+    upset_rates = (100.0 * grouped["sum"] / grouped["count"].replace(0, float("nan"))).fillna(0.0).tolist()
 
     fig, ax = plt.subplots(figsize=(10, 6))
     bar_colors = ["#e57373", "#ef9a9a", "#ffcc80", "#a5d6a7", "#80cbc4"]
