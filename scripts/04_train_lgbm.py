@@ -39,20 +39,15 @@ def train_lgbm(gender: str) -> float:
     # 1. Load full feature set
     features = pd.read_parquet(utils.FEATURES / f"team_features_{gender}.parquet")
 
-    # Drop feature columns that are entirely NaN (e.g. Massey / coach data
-    # unavailable for Women). make_matchup_df drops any row missing ANY feature,
-    # so all-NaN columns would eliminate the entire dataset.
-    feat_cols = [c for c in features.columns if c not in ("Season", "TeamID")]
-    non_null_feats = [c for c in feat_cols if features[c].notna().any()]
-    features = features[["Season", "TeamID"] + non_null_feats]
-
     # 2. Load tournament results
     tourney = utils.load_tourney(gender)
 
-    # 3. Build matchup dataframe (all *_diff columns)
+    # 3. Build matchup dataframe (NaN-tolerant: keeps rows with partial NaN
+    #    so seasons like 2024/2025 — missing massey_SAG — are not silently
+    #    dropped; SimpleImputer handles the NaN values within each CV fold).
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        matchups = utils.make_matchup_df(tourney, features)
+        matchups = utils.make_matchup_df_nan_tolerant(tourney, features)
 
     # 4. Identify feature columns: all *_diff columns except neutral_games_diff
     diff_cols = [c for c in matchups.columns if c.endswith("_diff")]

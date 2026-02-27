@@ -74,43 +74,45 @@ def get_cv_seasons(tourney_df: pd.DataFrame, n_seasons: int = 10) -> list:
     seasons = [s for s in seasons if s != 2020]
     return seasons[-n_seasons:]
 
+def _build_diff_result(tourney_df: pd.DataFrame, features_df: pd.DataFrame):
+    """Shared inner logic: build Team1/Team2 diffs without any row-dropping."""
+    feat_cols = [c for c in features_df.columns if c not in ("Season", "TeamID")]
+
+    df = tourney_df.copy()
+    df["Team1ID"] = df[["WTeamID", "LTeamID"]].min(axis=1)
+    df["Team2ID"] = df[["WTeamID", "LTeamID"]].max(axis=1)
+    df["Label"]   = (df["WTeamID"] == df["Team1ID"]).astype(int)
+
+    feat = features_df.set_index(["Season", "TeamID"])
+    t1 = (df[["Season", "Team1ID"]]
+          .rename(columns={"Team1ID": "TeamID"})
+          .join(feat, on=["Season", "TeamID"])
+          .drop(columns="TeamID"))
+    t2 = (df[["Season", "Team2ID"]]
+          .rename(columns={"Team2ID": "TeamID"})
+          .join(feat, on=["Season", "TeamID"])
+          .drop(columns="TeamID"))
+
+    result = df[["Season", "Team1ID", "Team2ID", "Label"]].copy()
+    for c in feat_cols:
+        result[f"{c}_diff"] = t1[c].values - t2[c].values
+
+    return result, feat_cols
+
+
 def make_matchup_df(tourney_df: pd.DataFrame, features_df: pd.DataFrame) -> pd.DataFrame:
     """
     Build a matchup-level DataFrame for model training.
     Team1 = lower TeamID, Team2 = higher TeamID.
     Feature columns are diffs: team1_feat - team2_feat.
     Label = 1 if Team1 (lower ID) won, 0 if Team2 won.
+
+    Rows where ANY feature diff is NaN are dropped (strict version).
+    Use make_matchup_df_nan_tolerant for models that handle NaN natively
+    or apply imputation after matchup construction.
     """
-    feat_cols = [c for c in features_df.columns if c not in ("Season", "TeamID")]
+    result, feat_cols = _build_diff_result(tourney_df, features_df)
 
-    # Assign Team1 (lower ID) and Team2 (higher ID)
-    df = tourney_df.copy()
-    df["Team1ID"] = df[["WTeamID", "LTeamID"]].min(axis=1)
-    df["Team2ID"] = df[["WTeamID", "LTeamID"]].max(axis=1)
-    df["Label"]   = (df["WTeamID"] == df["Team1ID"]).astype(int)
-
-    # Merge features for Team1
-    feat = features_df.set_index(["Season", "TeamID"])
-    t1 = (df[["Season", "Team1ID"]]
-          .rename(columns={"Team1ID": "TeamID"})
-          .join(feat, on=["Season", "TeamID"])
-          .drop(columns="TeamID"))
-    # Merge features for Team2
-    t2 = (df[["Season", "Team2ID"]]
-          .rename(columns={"Team2ID": "TeamID"})
-          .join(feat, on=["Season", "TeamID"])
-          .drop(columns="TeamID"))
-
-    # Compute diffs
-    diff_data = {}
-    for c in feat_cols:
-        diff_data[f"{c}_diff"] = t1[c].values - t2[c].values
-
-    result = df[["Season", "Team1ID", "Team2ID", "Label"]].copy()
-    for col, vals in diff_data.items():
-        result[col] = vals
-
-    # Drop rows where any feature is NaN (team not in features_df)
     n_before = len(result)
     result = result.dropna(subset=[f"{c}_diff" for c in feat_cols])
     skipped = n_before - len(result)
@@ -122,6 +124,36 @@ def make_matchup_df(tourney_df: pd.DataFrame, features_df: pd.DataFrame) -> pd.D
         )
 
     return result.reset_index(drop=True)
+
+
+def make_matchup_df_nan_tolerant(
+    tourney_df: pd.DataFrame, features_df: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    NaN-tolerant variant of make_matchup_df.
+
+    Rows are only dropped when ALL feature diffs are NaN (both teams entirely
+    absent from the feature set — no information whatsoever).  Rows with
+    *partial* NaN (e.g. a ranking system absent for recent seasons) are kept
+    so that a downstream SimpleImputer can fill them without losing games.
+
+    Use this for sklearn-style models (LGBM, XGBoost) where imputation happens
+    after matchup construction.
+    """
+    result, feat_cols = _build_diff_result(tourney_df, features_df)
+
+    diff_cols = [f"{c}_diff" for c in feat_cols]
+    all_nan_mask = result[diff_cols].isna().all(axis=1)
+    n_dropped = int(all_nan_mask.sum())
+    if n_dropped:
+        import warnings
+        warnings.warn(
+            f"make_matchup_df_nan_tolerant: dropped {n_dropped} games where all "
+            "feature diffs were NaN (both teams absent from feature set)",
+            stacklevel=2,
+        )
+
+    return result[~all_nan_mask].reset_index(drop=True)
 
 # ── Benchmark logging ─────────────────────────────────────────────────────────
 
