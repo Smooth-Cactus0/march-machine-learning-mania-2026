@@ -366,7 +366,7 @@ def build_location_features(gender: str) -> pd.DataFrame:
 
 POWER_CONFS = {
     'sec', 'acc', 'big_ten', 'big_east', 'big_twelve',
-    'pac_ten', 'pac_twelve', 'b10', 'b12', 'be'
+    'pac_ten', 'pac_twelve',
 }
 
 
@@ -451,7 +451,7 @@ def build_conf_tourney_features(gender: str) -> pd.DataFrame:
     finals = finals.drop_duplicates(subset=["Season", "TeamID"])
 
     # Merge wins and champion flag
-    result = wins.merge(finals, on=["Season", "TeamID"], how="outer")
+    result = wins.merge(finals, on=["Season", "TeamID"], how="left")
     result["conf_tourney_wins"] = result["conf_tourney_wins"].fillna(0).astype(int)
     result["conf_tourney_champion"] = result["conf_tourney_champion"].fillna(0).astype(int)
 
