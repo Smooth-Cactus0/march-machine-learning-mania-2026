@@ -4,6 +4,8 @@
 
 ## Competition
 
+[Kaggle competition page](https://www.kaggle.com/competitions/march-machine-learning-mania-2026)
+
 Predict the win probability for every possible game matchup in the 2026 NCAA Men's and Women's Basketball Tournaments. Evaluated on **Brier Score** (lower = better).
 
 ## Approach
@@ -40,6 +42,8 @@ submissions/     Stage 1 + Stage 2 predictions
 python scripts/01_eda.py                 # EDA + figures
 python scripts/02_feature_engineering.py # build features
 python scripts/03_train_baseline.py      # seed-diff baseline
+# ... continues through scripts 04–10 (models, tuning, ensemble, calibration, predict)
+# See CLAUDE.md for full pipeline
 ```
 
 ## Author

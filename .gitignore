@@ -1,7 +1,8 @@
-features/*.parquet
+features/
 models/
 march-machine-learning-mania-2026/
 march-machine-learning-mania-2026.zip
+.claude/
 __pycache__/
 *.pyc
 .DS_Store

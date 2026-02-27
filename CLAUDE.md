@@ -13,6 +13,7 @@ All raw data is in `march-machine-learning-mania-2026/`. Key files:
 - `MRegularSeasonCompactResults.csv` / `WRegularSeasonCompactResults.csv` — game-by-game results 1985–2025
 - `MRegularSeasonDetailedResults.csv` / `WRegularSeasonDetailedResults.csv` — box score stats 2003–2025
 - `MNCAATourneyCompactResults.csv` / `WNCAATourneyCompactResults.csv` — tournament results
+- `MNCAATourneyDetailedResults.csv` / `WNCAATourneyDetailedResults.csv` — tournament box score stats
 - `MNCAATourneySeeds.csv` / `WNCAATourneySeeds.csv` — tournament seeds
 - `MMasseyOrdinals.csv` — 196 ranking systems (POM, SAG, MOR, etc.), 2003–2026, ~5.7M rows
 - `SampleSubmissionStage1.csv` / `SampleSubmissionStage2.csv` — submission templates
@@ -44,13 +45,13 @@ Raw CSVs → Feature Engineering → Matchup DataFrame → Model Training → Ca
 
 ## Commands
 ```bash
-# Python interpreter
-PYTHON=C:/Users/alexy/AppData/Local/Programs/Python/Python311/python.exe
+# From project root — all scripts are run this way:
+python scripts/01_eda.py
+python scripts/02_feature_engineering.py
+python scripts/03_train_baseline.py
 
-# Run scripts from project root
-$PYTHON scripts/01_eda.py
-$PYTHON scripts/02_feature_engineering.py
-$PYTHON scripts/03_train_baseline.py
+# Local Windows (if python resolves to wrong version):
+# C:/Users/alexy/AppData/Local/Programs/Python/Python311/python.exe scripts/01_eda.py
 ```
 
 ## Directory Structure
