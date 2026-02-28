@@ -29,53 +29,12 @@ import warnings
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import utils
+from utils import build_monotone_vec  # monotone constraints live in utils
 
 import numpy as np
 import pandas as pd
 import joblib
 from sklearn.ensemble import HistGradientBoostingClassifier
-
-
-# ── Monotonic constraints ─────────────────────────────────────────────────────
-# A positive diff means Team1 has the larger raw value.
-# For seed: higher SeedNum = worse team, so SeedNum_diff > 0 → Team1 is WORSE
-#   → win prob should DECREASE as SeedNum_diff increases → constraint = -1
-# For all quality metrics (massey, eff, win_pct, etc.): larger diff = Team1 better
-#   → win prob should INCREASE → constraint = +1
-# Features we have no strong prior on → 0 (unconstrained)
-
-_MONOTONE_CONSTRAINTS = {
-    # Seed/ranking — negative: bigger SeedNum = worse team
-    "SeedNum_diff":           -1,
-    # Massey: lower rank number = better team (1st = best)
-    # So bigger massey_composite_diff = Team1 has higher rank number = worse
-    "massey_composite_diff":  -1,
-    "massey_POM_diff":        -1,
-    "massey_MOR_diff":        -1,
-    "sos_massey_diff":        -1,   # higher SOS rank number = weaker schedule
-    # Efficiency/quality — positive: bigger diff = Team1 is better
-    "net_eff_diff":           +1,
-    "efg_pct_diff":           +1,
-    "oreb_pct_diff":          +1,
-    "dreb_pct_diff":          +1,
-    "ft_rate_diff":           +1,
-    "win_pct_diff":           +1,
-    "avg_margin_diff":        +1,
-    "neutral_win_pct_diff":   +1,
-    "neutral_net_eff_diff":   +1,
-    "is_power_conf_diff":     +1,
-    "conf_tourney_wins_diff": +1,
-    "coach_years_at_school_diff": 0,   # no strong directional prior
-    "to_pct_diff":            -1,      # higher TO rate = worse team
-}
-
-
-def build_monotone_vec(feat_cols: list) -> list:
-    """
-    Return a list of monotonic constraint values (+1 / -1 / 0)
-    aligned to feat_cols in order. Defaults to 0 for unknown features.
-    """
-    return [_MONOTONE_CONSTRAINTS.get(c, 0) for c in feat_cols]
 
 
 # ── Main training loop ────────────────────────────────────────────────────────

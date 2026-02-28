@@ -102,6 +102,42 @@ def curate_features(feat_cols: list) -> list:
     return [c for c in feat_cols if c.replace("_diff", "") in CURATED_FEATURES]
 
 
+# ── Monotonic constraints for HistGB / sklearn histogram boosting ──────────────
+# +1 = higher diff → higher win prob (quality metrics: bigger advantage = better)
+# -1 = higher diff → lower win prob  (SeedNum: lower number = better team;
+#      massey/sos ranks: lower rank number = better; to_pct: more turnovers = worse)
+#  0 = no strong directional prior
+_MONOTONE_MAP: dict = {
+    "SeedNum_diff":               -1,
+    "massey_composite_diff":      -1,
+    "massey_POM_diff":            -1,
+    "massey_MOR_diff":            -1,
+    "sos_massey_diff":            -1,
+    "net_eff_diff":               +1,
+    "efg_pct_diff":               +1,
+    "oreb_pct_diff":              +1,
+    "dreb_pct_diff":              +1,
+    "ft_rate_diff":               +1,
+    "win_pct_diff":               +1,
+    "avg_margin_diff":            +1,
+    "neutral_win_pct_diff":       +1,
+    "neutral_net_eff_diff":       +1,
+    "is_power_conf_diff":         +1,
+    "conf_tourney_wins_diff":     +1,
+    "coach_years_at_school_diff":  0,
+    "to_pct_diff":                -1,
+}
+
+
+def build_monotone_vec(feat_cols: list) -> list:
+    """
+    Return monotonic constraint list aligned to feat_cols.
+    +1 = increasing, -1 = decreasing, 0 = unconstrained.
+    Defaults to 0 for any column not in _MONOTONE_MAP.
+    """
+    return [_MONOTONE_MAP.get(c, 0) for c in feat_cols]
+
+
 # ── Cross-validation ──────────────────────────────────────────────────────────
 
 def get_cv_seasons(tourney_df: pd.DataFrame, n_seasons: int = 10) -> list:
