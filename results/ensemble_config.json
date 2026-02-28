@@ -1,0 +1,22 @@
+{
+  "M": {
+    "models": [
+      "lgbm",
+      "xgb",
+      "catboost",
+      "histgb"
+    ],
+    "strategy": "mean",
+    "cv_brier": 0.186627
+  },
+  "W": {
+    "models": [
+      "lgbm",
+      "xgb",
+      "catboost",
+      "histgb"
+    ],
+    "strategy": "mean",
+    "cv_brier": 0.14634
+  }
+}
