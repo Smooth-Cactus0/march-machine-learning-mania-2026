@@ -62,6 +62,46 @@ def brier_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     y_pred = np.clip(np.asarray(y_pred, dtype=float), 0.0, 1.0)
     return float(np.mean((y_pred - y_true) ** 2))
 
+# ── Curated feature set ───────────────────────────────────────────────────────
+# Derived from feature importance + correlation analysis (07_analysis.py).
+# Rules applied:
+#   - Keep massey_POM + massey_MOR (top 2 individual systems); drop SAG/DOK/MAS
+#     (r > 0.9 with the top pair; composite already averages them)
+#   - Keep net_eff (= off_eff - def_eff); drop off_eff + def_eff individually
+#   - Keep avg_margin; drop avg_pts_scored + avg_pts_allowed (linear combo)
+#   - Keep neutral_win_pct + neutral_net_eff (most tournament-relevant splits);
+#     drop home_win_pct + away_win_pct (correlated; tournament has no home side)
+#   - Drop IsFirstFour (sparse, <4 games per season), conf_tourney_champion
+#     (sparse/low signal vs conf_tourney_wins)
+#   - Keep coach_years_at_school (consistent signal across models);
+#     drop is_new_coach (binary version already captured by years=1)
+CURATED_FEATURES = {
+    # Seed / ranking (19 → 5)
+    "SeedNum", "massey_composite", "massey_POM", "massey_MOR", "sos_massey",
+    # Efficiency — net only, plus four-factor components
+    "net_eff", "efg_pct", "oreb_pct", "dreb_pct", "to_pct", "ft_rate",
+    # Win rates & margin
+    "win_pct", "avg_margin",
+    # Neutral-court splits (most relevant for single-elimination tournament)
+    "neutral_win_pct", "neutral_net_eff",
+    # Conference / schedule quality
+    "is_power_conf",
+    # Momentum
+    "conf_tourney_wins",
+    # Coach continuity
+    "coach_years_at_school",
+}
+
+
+def curate_features(feat_cols: list) -> list:
+    """
+    Filter a list of *_diff column names to the CURATED_FEATURES set.
+    Preserves original ordering and silently skips unavailable features
+    (e.g. Women's lacks Massey individual systems).
+    """
+    return [c for c in feat_cols if c.replace("_diff", "") in CURATED_FEATURES]
+
+
 # ── Cross-validation ──────────────────────────────────────────────────────────
 
 def get_cv_seasons(tourney_df: pd.DataFrame, n_seasons: int = 10) -> list:

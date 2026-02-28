@@ -49,12 +49,11 @@ def train_lgbm(gender: str) -> float:
         warnings.simplefilter("ignore")
         matchups = utils.make_matchup_df_nan_tolerant(tourney, features)
 
-    # 4. Identify feature columns: all *_diff columns except neutral_games_diff
-    diff_cols = [c for c in matchups.columns if c.endswith("_diff")]
-    # Drop neutral_games_diff — it's a count, not a quality signal
-    diff_cols = [c for c in diff_cols if c != "neutral_games_diff"]
-
-    FEATURE_COLS = diff_cols
+    # 4. Identify feature columns: curated set from importance + correlation analysis
+    #    (utils.CURATED_FEATURES). Drops redundant Massey systems, individual
+    #    off/def eff, and other collinear features — see utils.py for rationale.
+    all_diff = [c for c in matchups.columns if c.endswith("_diff")]
+    FEATURE_COLS = utils.curate_features(all_diff)
 
     # 5. Leave-one-season-out CV on last 10 seasons
     cv_seasons = utils.get_cv_seasons(tourney, n_seasons=10)
@@ -152,7 +151,7 @@ if __name__ == "__main__":
     print(f"\nSaved models/lgbm_M.pkl, models/lgbm_W.pkl")
 
     # Log benchmarks
-    utils.log_benchmark("lgbm_v1", "M", mean_brier_m, "LGBMClassifier n=500 lr=0.05 md=4")
-    utils.log_benchmark("lgbm_v1", "W", mean_brier_w, "LGBMClassifier n=500 lr=0.05 md=4")
+    utils.log_benchmark("lgbm_v2", "M", mean_brier_m, "LGBMClassifier n=500 lr=0.05 md=4 curated-feats")
+    utils.log_benchmark("lgbm_v2", "W", mean_brier_w, "LGBMClassifier n=500 lr=0.05 md=4 curated-feats")
 
     print("Benchmarks updated.")

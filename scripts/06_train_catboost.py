@@ -109,12 +109,9 @@ def train_catboost(gender: str) -> float:
         warnings.simplefilter("ignore")
         matchups = make_matchup_df_catboost(tourney, features)
 
-    # 4. Drop neutral_games_diff column
-    if "neutral_games_diff" in matchups.columns:
-        matchups = matchups.drop(columns=["neutral_games_diff"])
-
-    # 5. Feature columns = all *_diff columns
-    FEATURE_COLS = [c for c in matchups.columns if c.endswith("_diff")]
+    # 4. Feature columns: curated set (see utils.CURATED_FEATURES)
+    all_diff     = [c for c in matchups.columns if c.endswith("_diff")]
+    FEATURE_COLS = utils.curate_features(all_diff)
 
     # 6. Leave-one-season-out CV on last 10 seasons
     cv_seasons = utils.get_cv_seasons(tourney, n_seasons=10)
@@ -206,12 +203,12 @@ if __name__ == "__main__":
 
     # Log benchmarks
     utils.log_benchmark(
-        "catboost_v1", "M", mean_brier_m,
-        "CatBoostClassifier iter=500 lr=0.05 depth=4"
+        "catboost_v2", "M", mean_brier_m,
+        "CatBoostClassifier iter=500 lr=0.05 depth=4 curated-feats"
     )
     utils.log_benchmark(
-        "catboost_v1", "W", mean_brier_w,
-        "CatBoostClassifier iter=500 lr=0.05 depth=4"
+        "catboost_v2", "W", mean_brier_w,
+        "CatBoostClassifier iter=500 lr=0.05 depth=4 curated-feats"
     )
 
     print("Benchmarks updated.")
