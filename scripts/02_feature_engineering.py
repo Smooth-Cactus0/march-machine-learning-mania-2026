@@ -573,9 +573,9 @@ def build_massey_pca_features() -> pd.DataFrame:
         max_rank = float(pivot.max().max())
         pivot    = max_rank - pivot + 1.0
 
-        # Standardise + fill NaN with 0 (= average in standardised space)
-        mat = StandardScaler().fit_transform(pivot)
-        mat = np.nan_to_num(mat, nan=0.0)
+        # Standardise — fill NaN with column mean before scaling
+        pivot_filled = pivot.fillna(pivot.mean())
+        mat = StandardScaler().fit_transform(pivot_filled)
 
         n_comp = min(2, mat.shape[1])
         pca    = PCA(n_components=n_comp, random_state=42)
