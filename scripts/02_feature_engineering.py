@@ -458,6 +458,65 @@ def build_conf_tourney_features(gender: str) -> pd.DataFrame:
     return result[["Season", "TeamID", "conf_tourney_wins", "conf_tourney_champion"]].copy()
 
 
+# ── Section 9: Elo ratings with margin-of-victory + season carryover ──────────
+
+def build_elo_features(gender: str) -> pd.DataFrame:
+    """
+    Compute end-of-season Elo ratings per (Season, TeamID).
+
+    Formula:
+      K_eff = 20 * (1 + margin/20)^0.6    (margin-of-victory scaling)
+      expected_A = 1 / (1 + 10^((elo_B - elo_A) / 400))
+      delta = K_eff * (outcome - expected_A)
+
+    Season carryover (mean reversion):
+      elo_start = prev_elo * 0.75 + 1500 * 0.25
+    New teams start at 1500.
+
+    Returns DataFrame with: Season, TeamID, elo_rating, elo_k_weighted_wins
+    """
+    comp    = utils.load_compact(gender)
+    seasons = sorted(comp["Season"].unique())
+
+    elo: dict  = {}   # {TeamID: current_elo}  — persists across seasons
+    records    = []
+
+    for season in seasons:
+        season_games = comp[comp["Season"] == season].sort_values("DayNum")
+        teams        = set(season_games["WTeamID"]) | set(season_games["LTeamID"])
+
+        # Carryover / initialise
+        for tid in teams:
+            elo[tid] = elo[tid] * 0.75 + 1500 * 0.25 if tid in elo else 1500.0
+
+        k_wins: dict = {tid: 0.0 for tid in teams}
+
+        for _, row in season_games.iterrows():
+            w      = int(row["WTeamID"])
+            l      = int(row["LTeamID"])
+            margin = float(row["WScore"] - row["LScore"])
+            ew, el = elo.get(w, 1500.0), elo.get(l, 1500.0)
+            exp_w  = 1.0 / (1.0 + 10.0 ** ((el - ew) / 400.0))
+            k_eff  = 20.0 * (1.0 + margin / 20.0) ** 0.6
+            delta  = k_eff * (1.0 - exp_w)
+            elo[w] += delta
+            elo[l] -= delta
+            k_wins[w] = k_wins.get(w, 0.0) + k_eff
+
+        for tid in teams:
+            records.append({
+                "Season":              season,
+                "TeamID":              tid,
+                "elo_rating":          elo[tid],
+                "elo_k_weighted_wins": k_wins[tid],
+            })
+
+    result = pd.DataFrame(records)
+    result["elo_rating"]          = result["elo_rating"].astype(float)
+    result["elo_k_weighted_wins"] = result["elo_k_weighted_wins"].astype(float)
+    return result
+
+
 # ── Section 8: Coach continuity ───────────────────────────────────────────────
 
 def build_coach_features() -> pd.DataFrame:
@@ -557,7 +616,12 @@ def build_and_save(gender: str) -> pd.DataFrame:
         df["coach_years_at_school"] = np.nan
         df["is_new_coach"]          = np.nan
 
-    # 8. Verify uniqueness
+    # 8. Elo features
+    elo_feats = build_elo_features(gender)
+    print(f"  Elo features:        {elo_feats.shape}")
+    df = df.merge(elo_feats, on=["Season", "TeamID"], how="left")
+
+    # 9. Verify uniqueness
     n_dupes = df.duplicated(subset=["Season", "TeamID"]).sum()
     if n_dupes > 0:
         print(f"  WARNING: {n_dupes} duplicate (Season, TeamID) rows — dropping extras")
@@ -565,12 +629,12 @@ def build_and_save(gender: str) -> pd.DataFrame:
 
     df = df.sort_values(["Season", "TeamID"]).reset_index(drop=True)
 
-    # 9. Save
+    # 10. Save
     utils.FEATURES.mkdir(parents=True, exist_ok=True)
     out_path = utils.FEATURES / f"team_features_{gender}.parquet"
     df.to_parquet(out_path, index=False)
 
-    # 10. Summary
+    # 11. Summary
     season_min = df["Season"].min()
     season_max = df["Season"].max()
     nan_counts = df.isnull().sum()
