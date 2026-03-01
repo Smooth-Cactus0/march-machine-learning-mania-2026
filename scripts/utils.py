@@ -90,6 +90,12 @@ CURATED_FEATURES = {
     "conf_tourney_wins",
     # Coach continuity
     "coach_years_at_school",
+    # Massey PCA (Men's only; Women's gets NaN)
+    "massey_pc1", "massey_pc2",
+    # Elo
+    "elo_rating", "elo_k_weighted_wins",
+    # Recent form (last 10 regular season games)
+    "recent_win_pct", "recent_net_margin", "streak",
 }
 
 
@@ -126,6 +132,16 @@ _MONOTONE_MAP: dict = {
     "conf_tourney_wins_diff":     +1,
     "coach_years_at_school_diff":  0,
     "to_pct_diff":                -1,
+    # Elo
+    "elo_rating_diff":          +1,   # higher Elo = better team
+    "elo_k_weighted_wins_diff": +1,   # more dominant wins = better
+    # Massey PCA
+    "massey_pc1_diff":          +1,   # higher consensus rank = better
+    "massey_pc2_diff":           0,   # direction of disagreement is ambiguous
+    # Momentum
+    "recent_win_pct_diff":      +1,
+    "recent_net_margin_diff":   +1,
+    "streak_diff":              +1,   # win streak advantage = better
 }
 
 
