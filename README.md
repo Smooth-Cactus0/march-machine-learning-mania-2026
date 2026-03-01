@@ -52,11 +52,16 @@ models/{model}_tuned_{M,W}.pkl
 11_calibrate.py  →  results/calibrator_{M,W}.pkl
    │  Platt scaling (near-no-op; models already calibrated)
    ▼
+12_predict.py
+   │  mean ensemble + Platt calibration
+   ▼
+submissions/submission_stage{1,2}.csv           (LB 0.1384)
+
 13_meta_learner.py
    │  LogisticRegression on logit(OOF predictions)
    │  C=1.0 (L2 regularisation prevents multicollinearity)
    ▼
-submissions/submission_meta_stage{1,2}.csv
+submissions/submission_meta_stage{1,2}.csv      (LB 0.125)
 ```
 
 ---
@@ -82,7 +87,8 @@ python scripts/03_train_baseline.py        # seed-diff baseline
 python scripts/09_tune_optuna.py           # tune all 4 models (takes ~30 min)
 python scripts/10_ensemble.py             # build OOF ensemble
 python scripts/11_calibrate.py            # Platt scaling
-python scripts/13_meta_learner.py         # meta-learner + generate submissions
+python scripts/12_predict.py              # ensemble + Platt submissions (LB 0.1384)
+python scripts/13_meta_learner.py         # meta-learner submissions  (LB 0.125) ← best
 ```
 
 ---
