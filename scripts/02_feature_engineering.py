@@ -517,6 +517,93 @@ def build_elo_features(gender: str) -> pd.DataFrame:
     return result
 
 
+# ── Section 10: Massey PCA — all systems with >= 50% coverage ─────────────────
+
+def build_massey_pca_features() -> pd.DataFrame:
+    """
+    PCA of all Massey ordinal systems with >= 50% team coverage.
+
+    Steps per season:
+      1. Keep last pre-tournament rank per (Season, TeamID, SystemName)
+      2. Pivot to (TeamID × SystemName) matrix
+      3. Keep systems with >= 50% team coverage
+      4. Flip sign: lower rank = better → flip so higher score = better
+      5. StandardScaler, fill NaN with 0 (= mean in z-score space)
+      6. PCA → massey_pc1 (consensus), massey_pc2 (disagreement)
+
+    Men's only — Women's has no Massey data and will receive NaN via left-join.
+    """
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
+
+    massey = utils.load_massey()
+    massey = massey[massey["RankingDayNum"] <= 133].copy()
+
+    # Last available rank per (Season, TeamID, SystemName)
+    massey = massey.sort_values("RankingDayNum")
+    last   = (massey
+              .groupby(["Season", "TeamID", "SystemName"])["OrdinalRank"]
+              .last()
+              .reset_index())
+
+    records = []
+
+    for season in sorted(last["Season"].unique()):
+        sdf   = last[last["Season"] == season]
+        pivot = sdf.pivot_table(
+            index="TeamID", columns="SystemName",
+            values="OrdinalRank", aggfunc="first",
+        )
+
+        # Keep systems with >= 50% team coverage
+        n_teams  = len(pivot)
+        coverage = pivot.notna().sum() / n_teams
+        keep     = coverage[coverage >= 0.5].index.tolist()
+
+        if len(keep) < 2:
+            # Not enough systems for PCA — return NaN for this season
+            for tid in pivot.index:
+                records.append({"Season": season, "TeamID": int(tid),
+                                 "massey_pc1": np.nan, "massey_pc2": np.nan})
+            continue
+
+        pivot = pivot[keep].copy()
+
+        # Flip: lower rank number = better → higher value = better
+        max_rank = float(pivot.max().max())
+        pivot    = max_rank - pivot + 1.0
+
+        # Standardise + fill NaN with 0 (= average in standardised space)
+        mat = StandardScaler().fit_transform(pivot)
+        mat = np.nan_to_num(mat, nan=0.0)
+
+        n_comp = min(2, mat.shape[1])
+        pca    = PCA(n_components=n_comp, random_state=42)
+        pcs    = pca.fit_transform(mat)
+
+        # Align PC1 sign: better teams (lower original rank = higher flipped score)
+        # should have higher PC1.  Check: if the median rank of the top-quartile
+        # teams (by flipped score) has *negative* PC1, flip the sign.
+        top_q_idx = np.where(pivot.mean(axis=1).values > np.percentile(pivot.mean(axis=1), 75))[0]
+        if len(top_q_idx) > 0 and pcs[top_q_idx, 0].mean() < 0:
+            pcs[:, 0] = -pcs[:, 0]
+
+        var_explained = pca.explained_variance_ratio_
+        if season == sorted(last["Season"].unique())[-1]:
+            print(f"  Season {season}: {len(keep)} systems, "
+                  f"PC1={var_explained[0]:.1%}, PC2={var_explained[1]:.1%}")
+
+        for i, tid in enumerate(pivot.index):
+            records.append({
+                "Season":     season,
+                "TeamID":     int(tid),
+                "massey_pc1": float(pcs[i, 0]),
+                "massey_pc2": float(pcs[i, 1]) if n_comp >= 2 else np.nan,
+            })
+
+    return pd.DataFrame(records)
+
+
 # ── Section 8: Coach continuity ───────────────────────────────────────────────
 
 def build_coach_features() -> pd.DataFrame:
@@ -621,7 +708,16 @@ def build_and_save(gender: str) -> pd.DataFrame:
     print(f"  Elo features:        {elo_feats.shape}")
     df = df.merge(elo_feats, on=["Season", "TeamID"], how="left")
 
-    # 9. Verify uniqueness
+    # 9. Massey PCA features (Men's only; Women's gets NaN via left-join)
+    if gender == "M":
+        massey_pca_feats = build_massey_pca_features()
+        print(f"  Massey PCA features: {massey_pca_feats.shape}")
+        df = df.merge(massey_pca_feats, on=["Season", "TeamID"], how="left")
+    else:
+        df["massey_pc1"] = np.nan
+        df["massey_pc2"] = np.nan
+
+    # 10. Verify uniqueness
     n_dupes = df.duplicated(subset=["Season", "TeamID"]).sum()
     if n_dupes > 0:
         print(f"  WARNING: {n_dupes} duplicate (Season, TeamID) rows — dropping extras")
@@ -629,12 +725,12 @@ def build_and_save(gender: str) -> pd.DataFrame:
 
     df = df.sort_values(["Season", "TeamID"]).reset_index(drop=True)
 
-    # 10. Save
+    # 11. Save
     utils.FEATURES.mkdir(parents=True, exist_ok=True)
     out_path = utils.FEATURES / f"team_features_{gender}.parquet"
     df.to_parquet(out_path, index=False)
 
-    # 11. Summary
+    # 12. Summary
     season_min = df["Season"].min()
     season_max = df["Season"].max()
     nan_counts = df.isnull().sum()
