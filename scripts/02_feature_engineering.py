@@ -604,6 +604,71 @@ def build_massey_pca_features() -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
+# ── Section 11: Late-season momentum (last N games) ───────────────────────────
+
+def build_momentum_features(gender: str, n_games: int = 10) -> pd.DataFrame:
+    """
+    Compute momentum features from the last n_games regular season games.
+
+    Features per (Season, TeamID):
+      - recent_win_pct:     win% in last n_games
+      - recent_net_margin:  mean point margin in last n_games
+      - streak:             current streak length (positive=wins, negative=losses)
+                            e.g. +5 = 5-game win streak, -2 = 2-game losing streak
+    """
+    comp = utils.load_compact(gender)
+
+    # Build long format: one row per (Season, TeamID, game)
+    win_rows = comp[["Season", "DayNum", "WTeamID", "WScore", "LScore"]].copy()
+    win_rows["TeamID"] = win_rows["WTeamID"]
+    win_rows["won"]    = 1
+    win_rows["margin"] = win_rows["WScore"] - win_rows["LScore"]
+
+    loss_rows = comp[["Season", "DayNum", "LTeamID", "WScore", "LScore"]].copy()
+    loss_rows["TeamID"] = loss_rows["LTeamID"]
+    loss_rows["won"]    = 0
+    loss_rows["margin"] = loss_rows["LScore"] - loss_rows["WScore"]
+
+    games = pd.concat([
+        win_rows[["Season", "DayNum", "TeamID", "won", "margin"]],
+        loss_rows[["Season", "DayNum", "TeamID", "won", "margin"]],
+    ], ignore_index=True).sort_values(["Season", "TeamID", "DayNum"])
+
+    # Keep only the last n_games per (Season, TeamID)
+    last_n = games.groupby(["Season", "TeamID"]).tail(n_games)
+
+    # Aggregate recent_win_pct and recent_net_margin
+    agg = last_n.groupby(["Season", "TeamID"]).agg(
+        recent_win_pct    =("won",    "mean"),
+        recent_net_margin =("margin", "mean"),
+    ).reset_index()
+
+    # Streak: count consecutive same outcomes from the last game backwards
+    def compute_streak(grp: pd.DataFrame) -> int:
+        outcomes = grp.sort_values("DayNum")["won"].values
+        if len(outcomes) == 0:
+            return 0
+        last_outcome = int(outcomes[-1])
+        count = 0
+        for o in reversed(outcomes):
+            if int(o) == last_outcome:
+                count += 1
+            else:
+                break
+        return count if last_outcome == 1 else -count
+
+    streak_series = (
+        games
+        .groupby(["Season", "TeamID"])
+        .apply(compute_streak)
+        .reset_index(name="streak")
+    )
+
+    result = agg.merge(streak_series, on=["Season", "TeamID"], how="left")
+    result["streak"] = result["streak"].fillna(0).astype(int)
+    return result
+
+
 # ── Section 8: Coach continuity ───────────────────────────────────────────────
 
 def build_coach_features() -> pd.DataFrame:
@@ -717,7 +782,12 @@ def build_and_save(gender: str) -> pd.DataFrame:
         df["massey_pc1"] = np.nan
         df["massey_pc2"] = np.nan
 
-    # 10. Verify uniqueness
+    # 10. Momentum features (last 10 regular season games)
+    momentum_feats = build_momentum_features(gender)
+    print(f"  Momentum features:   {momentum_feats.shape}")
+    df = df.merge(momentum_feats, on=["Season", "TeamID"], how="left")
+
+    # 11. Verify uniqueness
     n_dupes = df.duplicated(subset=["Season", "TeamID"]).sum()
     if n_dupes > 0:
         print(f"  WARNING: {n_dupes} duplicate (Season, TeamID) rows — dropping extras")
