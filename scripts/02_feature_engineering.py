@@ -491,17 +491,17 @@ def build_elo_features(gender: str) -> pd.DataFrame:
 
         k_wins: dict = {tid: 0.0 for tid in teams}
 
-        for _, row in season_games.iterrows():
-            w      = int(row["WTeamID"])
-            l      = int(row["LTeamID"])
-            margin = float(row["WScore"] - row["LScore"])
+        for row in season_games.itertuples(index=False):
+            w      = int(row.WTeamID)
+            l      = int(row.LTeamID)
+            margin = max(float(row.WScore - row.LScore), 1.0)
             ew, el = elo.get(w, 1500.0), elo.get(l, 1500.0)
             exp_w  = 1.0 / (1.0 + 10.0 ** ((el - ew) / 400.0))
             k_eff  = 20.0 * (1.0 + margin / 20.0) ** 0.6
             delta  = k_eff * (1.0 - exp_w)
             elo[w] += delta
             elo[l] -= delta
-            k_wins[w] = k_wins.get(w, 0.0) + k_eff
+            k_wins[w] += k_eff
 
         for tid in teams:
             records.append({
