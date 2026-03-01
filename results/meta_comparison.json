@@ -1,0 +1,14 @@
+{
+  "M": {
+    "winner": "logreg",
+    "brier_lgbm": 0.18785966976740612,
+    "brier_logreg": 0.18700484105407936,
+    "brier_selected": 0.18700484105407936
+  },
+  "W": {
+    "winner": "logreg",
+    "brier_lgbm": 0.14995348688692683,
+    "brier_logreg": 0.14599116157157746,
+    "brier_selected": 0.14599116157157746
+  }
+}
