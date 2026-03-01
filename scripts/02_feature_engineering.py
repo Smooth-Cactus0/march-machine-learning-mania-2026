@@ -617,6 +617,7 @@ def build_momentum_features(gender: str, n_games: int = 10) -> pd.DataFrame:
                             e.g. +5 = 5-game win streak, -2 = 2-game losing streak
     """
     comp = utils.load_compact(gender)
+    comp = comp[comp["DayNum"] < 132].copy()   # regular season only; exclude conf tourneys
 
     # Build long format: one row per (Season, TeamID, game)
     win_rows = comp[["Season", "DayNum", "WTeamID", "WScore", "LScore"]].copy()
@@ -643,7 +644,9 @@ def build_momentum_features(gender: str, n_games: int = 10) -> pd.DataFrame:
         recent_net_margin =("margin", "mean"),
     ).reset_index()
 
-    # Streak: count consecutive same outcomes from the last game backwards
+    # Streak: count consecutive same outcomes from the last game backwards.
+    # Intentionally uses all season games (not last_n) so a 20-game win streak
+    # is correctly reported as +20 even when n_games=10.
     def compute_streak(grp: pd.DataFrame) -> int:
         outcomes = grp.sort_values("DayNum")["won"].values
         if len(outcomes) == 0:
@@ -660,7 +663,7 @@ def build_momentum_features(gender: str, n_games: int = 10) -> pd.DataFrame:
     streak_series = (
         games
         .groupby(["Season", "TeamID"])
-        .apply(compute_streak)
+        .apply(compute_streak, include_groups=False)
         .reset_index(name="streak")
     )
 
