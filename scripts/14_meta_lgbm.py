@@ -116,8 +116,7 @@ def load_meta_features(gender: str) -> tuple:
 
 # ── LightGBM CV + Optuna ───────────────────────────────────────────────────────
 
-def _lgbm_cv_brier(params: dict, X: np.ndarray, y: np.ndarray,
-                   seasons: np.ndarray) -> float:
+def _lgbm_cv_brier(params: dict, X: np.ndarray, y: np.ndarray) -> float:
     """5-fold stratified CV Brier for LightGBM meta-learner."""
     skf = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=42)
     oof_preds, oof_labels = [], []
@@ -159,7 +158,7 @@ def make_lgbm_meta_objective(X: np.ndarray, y: np.ndarray,
             "subsample":         trial.suggest_float("subsample", 0.6, 1.0),
             "colsample_bytree":  trial.suggest_float("colsample_bytree", 0.6, 1.0),
         }
-        return _lgbm_cv_brier(params, X, y, seasons)
+        return _lgbm_cv_brier(params, X, y)
     return objective
 
 
@@ -183,8 +182,7 @@ def tune_lgbm_meta(X: np.ndarray, y: np.ndarray,
 
 # ── LogReg baseline + winner selection ────────────────────────────────────────
 
-def logreg_cv_brier(X: np.ndarray, y: np.ndarray,
-                    seasons: np.ndarray) -> float:
+def logreg_cv_brier(X: np.ndarray, y: np.ndarray) -> float:
     """5-fold CV Brier for LogisticRegression on same features."""
     skf = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=42)
     oof_preds, oof_labels = [], []
@@ -212,12 +210,13 @@ def train_final_meta(X: np.ndarray, y: np.ndarray,
     return model
 
 
-def select_and_train(gender: str, lgbm_result: dict) -> dict:
+def select_and_train(gender: str, lgbm_result: dict,
+                     X: np.ndarray, y: np.ndarray,
+                     seasons: np.ndarray) -> dict:
     """Compare LGBM vs LogReg CV Brier. Select winner. Returns artifact dict."""
-    X, y, seasons = load_meta_features(gender)
     label = "Men's" if gender == "M" else "Women's"
 
-    brier_logreg = logreg_cv_brier(X, y, seasons)
+    brier_logreg = logreg_cv_brier(X, y)
     brier_lgbm   = lgbm_result["cv_brier"]
 
     print(f"\n  {label} comparison:")
@@ -355,7 +354,7 @@ if __name__ == "__main__":
         lgbm_result = tune_lgbm_meta(X, y, seasons, gender)
 
         # Compare vs LogReg, select winner, train final model
-        artifact = select_and_train(gender, lgbm_result)
+        artifact = select_and_train(gender, lgbm_result, X, y, seasons)
         artifacts[gender] = artifact
         comparison[gender] = {
             "winner":         artifact["winner"],
@@ -379,7 +378,8 @@ if __name__ == "__main__":
 
     # Save comparison JSON
     comp_path = utils.RESULTS / "meta_comparison.json"
-    json.dump(comparison, open(comp_path, "w"), indent=2)
+    with open(comp_path, "w") as f:
+        json.dump(comparison, f, indent=2)
     print(f"\nComparison saved to {comp_path.name}")
 
     # Generate submissions
