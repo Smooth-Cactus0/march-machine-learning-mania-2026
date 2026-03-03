@@ -1,7 +1,7 @@
 {
-  "max_iter": 92,
-  "learning_rate": 0.03822726574649208,
+  "max_iter": 74,
+  "learning_rate": 0.05289049672383247,
   "max_depth": 2,
-  "min_samples_leaf": 28,
-  "l2_regularization": 0.3939675937754722
+  "min_samples_leaf": 24,
+  "l2_regularization": 0.317163972230804
 }

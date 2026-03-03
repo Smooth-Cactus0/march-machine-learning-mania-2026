@@ -1,9 +1,9 @@
 {
-  "iterations": 244,
-  "learning_rate": 0.014782395696537986,
-  "depth": 4,
-  "l2_leaf_reg": 9.133912378260037,
-  "subsample": 0.5803575046369015,
-  "colsample_bylevel": 0.5932319340190555,
-  "min_data_in_leaf": 16
+  "iterations": 59,
+  "learning_rate": 0.10863395429024565,
+  "depth": 2,
+  "l2_leaf_reg": 7.058162655213176,
+  "subsample": 0.6514106963642337,
+  "colsample_bylevel": 0.7779832487464134,
+  "min_data_in_leaf": 18
 }

@@ -7,7 +7,7 @@
       "histgb"
     ],
     "strategy": "mean",
-    "cv_brier": 0.188534
+    "cv_brier": 0.186627
   },
   "W": {
     "models": [
@@ -17,6 +17,6 @@
       "histgb"
     ],
     "strategy": "mean",
-    "cv_brier": 0.14417
+    "cv_brier": 0.14634
   }
 }

@@ -7,34 +7,34 @@ CV Brier scores for all models (lower is better). Auto-updated by training scrip
 | Model | Gender | CV Brier | Notes | Timestamp |
 |-------|--------|----------|-------|-----------|
 | baseline_logreg | M | 0.196454 | seed-diff only | 2026-02-27 14:09 |
-| calibrated_v1 | M | 0.184544 | Platt-scaled ensemble (pre=0.1846 post=0.1845) | 2026-03-01 19:22 |
+| calibrated_v1 | M | 0.186554 | Platt-scaled ensemble (pre=0.1866 post=0.1866) | 2026-03-03 16:02 |
 | catboost_v1 | M | 0.200576 | CatBoostClassifier iter=500 lr=0.05 depth=4 | 2026-02-27 16:06 |
-| catboost_v2 | M | 0.201369 | CatBoostClassifier iter=500 lr=0.05 depth=4 curated-feats | 2026-02-28 13:23 |
+| catboost_v2 | M | 0.201369 | CatBoostClassifier iter=500 lr=0.05 depth=4 curated-feats | 2026-03-03 16:01 |
 | catboost_v3 | M | 0.186813 | catboost Optuna n=50 best_brier=0.1868 | 2026-03-03 14:14 |
-| ensemble_v1 | M | 0.188534 | 4-model mean ensemble (lgbm+xgb+catboost+histgb) Optuna-tuned | 2026-03-03 14:23 |
-| histgb_v1 | M | 0.202765 | HistGBClassifier iter=500 lr=0.05 md=4 monotone-constraints | 2026-02-28 13:42 |
+| ensemble_v1 | M | 0.186627 | 4-model mean ensemble (lgbm+xgb+catboost+histgb) Optuna-tuned | 2026-03-03 16:01 |
+| histgb_v1 | M | 0.202765 | HistGBClassifier iter=500 lr=0.05 md=4 monotone-constraints | 2026-03-03 16:01 |
 | histgb_v3 | M | 0.190413 | histgb Optuna n=50 best_brier=0.1904 | 2026-03-03 14:15 |
 | lgbm_v1 | M | 0.202406 | LGBMClassifier n=500 lr=0.05 md=4 | 2026-02-27 16:14 |
-| lgbm_v2 | M | 0.216302 | LGBMClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 13:44 |
+| lgbm_v2 | M | 0.203346 | LGBMClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 16:00 |
 | lgbm_v3 | M | 0.189912 | lgbm Optuna n=50 best_brier=0.1899 | 2026-03-03 14:06 |
 | meta_v1 | M | 0.185873 | LogReg meta-learner on logit OOF (mean=0.1885 -> meta=0.1859) | 2026-03-03 14:23 |
-| meta_v2 | M | 0.187005 | logreg meta-learner (lgbm=0.1879 logreg=0.1870) | 2026-03-01 19:25 |
+| meta_v2 | M | 0.188157 | logreg meta-learner (lgbm=0.1919 logreg=0.1882) | 2026-03-03 16:06 |
 | xgb_v1 | M | 0.203340 | XGBClassifier n=500 lr=0.05 md=4 | 2026-02-27 16:15 |
-| xgb_v2 | M | 0.204288 | XGBClassifier n=500 lr=0.05 md=4 curated-feats | 2026-02-28 13:23 |
+| xgb_v2 | M | 0.204288 | XGBClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 16:00 |
 | xgb_v3 | M | 0.188592 | xgb Optuna n=50 best_brier=0.1886 | 2026-03-03 14:07 |
 | baseline_logreg | W | 0.149706 | seed-diff only | 2026-02-27 14:09 |
-| calibrated_v1 | W | 0.146278 | Platt-scaled ensemble (pre=0.1463 post=0.1463) | 2026-03-01 19:22 |
+| calibrated_v1 | W | 0.146519 | Platt-scaled ensemble (pre=0.1463 post=0.1465) | 2026-03-03 16:02 |
 | catboost_v1 | W | 0.159824 | CatBoostClassifier iter=500 lr=0.05 depth=4 | 2026-02-27 16:06 |
-| catboost_v2 | W | 0.161340 | CatBoostClassifier iter=500 lr=0.05 depth=4 curated-feats | 2026-02-28 13:23 |
+| catboost_v2 | W | 0.161340 | CatBoostClassifier iter=500 lr=0.05 depth=4 curated-feats | 2026-03-03 16:01 |
 | catboost_v3 | W | 0.144587 | catboost Optuna n=50 best_brier=0.1446 | 2026-03-03 14:22 |
-| ensemble_v1 | W | 0.144170 | 4-model mean ensemble (lgbm+xgb+catboost+histgb) Optuna-tuned | 2026-03-03 14:23 |
-| histgb_v1 | W | 0.155766 | HistGBClassifier iter=500 lr=0.05 md=4 monotone-constraints | 2026-02-28 13:42 |
+| ensemble_v1 | W | 0.146340 | 4-model mean ensemble (lgbm+xgb+catboost+histgb) Optuna-tuned | 2026-03-03 16:01 |
+| histgb_v1 | W | 0.155766 | HistGBClassifier iter=500 lr=0.05 md=4 monotone-constraints | 2026-03-03 16:01 |
 | histgb_v3 | W | 0.143955 | histgb Optuna n=50 best_brier=0.1440 | 2026-03-03 14:23 |
 | lgbm_v1 | W | 0.167394 | LGBMClassifier n=500 lr=0.05 md=4 | 2026-02-27 16:14 |
-| lgbm_v2 | W | 0.172288 | LGBMClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 13:44 |
+| lgbm_v2 | W | 0.169039 | LGBMClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 16:00 |
 | lgbm_v3 | W | 0.144562 | lgbm Optuna n=50 best_brier=0.1446 | 2026-03-03 14:16 |
 | meta_v1 | W | 0.143398 | LogReg meta-learner on logit OOF (mean=0.1442 -> meta=0.1434) | 2026-03-03 14:23 |
-| meta_v2 | W | 0.145991 | logreg meta-learner (lgbm=0.1500 logreg=0.1460) | 2026-03-01 19:25 |
+| meta_v2 | W | 0.146662 | logreg meta-learner (lgbm=0.1489 logreg=0.1467) | 2026-03-03 16:06 |
 | xgb_v1 | W | 0.172000 | XGBClassifier n=500 lr=0.05 md=4 | 2026-02-27 16:15 |
-| xgb_v2 | W | 0.170134 | XGBClassifier n=500 lr=0.05 md=4 curated-feats | 2026-02-28 13:23 |
+| xgb_v2 | W | 0.170134 | XGBClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 16:00 |
 | xgb_v3 | W | 0.146638 | xgb Optuna n=50 best_brier=0.1466 | 2026-03-03 14:17 |
