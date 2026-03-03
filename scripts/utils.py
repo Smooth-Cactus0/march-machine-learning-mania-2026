@@ -92,10 +92,14 @@ CURATED_FEATURES = {
     "coach_years_at_school",
     # Massey PCA (Men's only; Women's gets NaN)
     "massey_pc1", "massey_pc2",
-    # Elo
-    "elo_rating", "elo_k_weighted_wins",
-    # Recent form (last 10 regular season games)
+    # Elo (Haupts-style, 7 features)
+    "elo_last", "elo_mean", "elo_median", "elo_std", "elo_min", "elo_max", "elo_trend",
+    # Recent form (last 10 regular season + conf tourney games)
     "recent_win_pct", "recent_net_margin", "streak",
+    # Historical tournament performance (last 3 seasons)
+    "tourney_win_pct_hist", "tourney_net_margin_hist", "tourney_rounds_advanced_avg",
+    # Tournament box score efficiency (last 3 seasons)
+    "tourney_off_eff_hist", "tourney_def_eff_hist",
 }
 
 
@@ -132,9 +136,14 @@ _MONOTONE_MAP: dict = {
     "conf_tourney_wins_diff":     +1,
     "coach_years_at_school_diff":  0,
     "to_pct_diff":                -1,
-    # Elo
-    "elo_rating_diff":          +1,   # higher Elo = better team
-    "elo_k_weighted_wins_diff": +1,   # more dominant wins = better
+    # Elo (Haupts-style, 7 features)
+    "elo_last_diff":            +1,   # final regular-season rating
+    "elo_mean_diff":            +1,   # avg rating across season
+    "elo_median_diff":          +1,   # robust to spikes
+    "elo_std_diff":              0,   # consistency — direction ambiguous
+    "elo_min_diff":             +1,   # worst point of season
+    "elo_max_diff":             +1,   # peak rating
+    "elo_trend_diff":           +1,   # improving trend = better
     # Massey PCA
     "massey_pc1_diff":          +1,   # higher consensus rank = better
     "massey_pc2_diff":           0,   # direction of disagreement is ambiguous
@@ -142,6 +151,13 @@ _MONOTONE_MAP: dict = {
     "recent_win_pct_diff":      +1,
     "recent_net_margin_diff":   +1,
     "streak_diff":              +1,   # win streak advantage = better
+    # Historical tournament performance
+    "tourney_win_pct_hist_diff":          +1,   # better tourney win rate = stronger team
+    "tourney_net_margin_hist_diff":       +1,   # higher margin = dominant in tourney
+    "tourney_rounds_advanced_avg_diff":   +1,   # deeper runs = better team
+    # Tournament box score efficiency
+    "tourney_off_eff_hist_diff":          +1,   # more pts/poss in tourney = better offence
+    "tourney_def_eff_hist_diff":          -1,   # fewer opp pts/poss = better defence
 }
 
 

@@ -14,6 +14,7 @@ import utils
 
 import numpy as np
 import pandas as pd
+from scipy.stats import linregress
 
 
 # ── Section 1: Efficiency features from detailed regular season results ────────
@@ -458,63 +459,118 @@ def build_conf_tourney_features(gender: str) -> pd.DataFrame:
     return result[["Season", "TeamID", "conf_tourney_wins", "conf_tourney_champion"]].copy()
 
 
-# ── Section 9: Elo ratings with margin-of-victory + season carryover ──────────
+# ── Section 9: Haupts-style Elo — 7 per-season summary features ───────────────
 
 def build_elo_features(gender: str) -> pd.DataFrame:
     """
-    Compute end-of-season Elo ratings per (Season, TeamID).
+    Haupts-style Elo with 7 per-season summary statistics.
 
-    Formula:
-      K_eff = 20 * (1 + margin/20)^0.6    (margin-of-victory scaling)
-      expected_A = 1 / (1 + 10^((elo_B - elo_A) / 400))
-      delta = K_eff * (outcome - expected_A)
+    Key improvements over previous implementation:
+      - Continuous accumulation across seasons (no 75/25 mean-reversion reset)
+      - Tournament games included in the update chain (weighted by game type):
+          Men's:   regular weight=1.0, tourney weight=0.75
+          Women's: regular weight=0.95, tourney weight=1.0
+      - Parameters tuned by Haupts: initial_rating=width=1200, k=125 (M) / 190 (W)
+      - MoV multiplier retained: k_eff = k * weight * (1 + margin/20)^0.6
+      - 7 output features: elo_last, elo_mean, elo_median, elo_std,
+                           elo_min, elo_max, elo_trend
 
-    Season carryover (mean reversion):
-      elo_start = prev_elo * 0.75 + 1500 * 0.25
-    New teams start at 1500.
-
-    Returns DataFrame with: Season, TeamID, elo_rating, elo_k_weighted_wins
+    Leakage safeguard:
+      Summary statistics are computed from REGULAR SEASON ONLY (is_tourney == 0).
+      Tournament games update the Elo chain and carry forward into the next
+      season's starting rating, but are excluded from per-season summary stats.
     """
     comp    = utils.load_compact(gender)
-    seasons = sorted(comp["Season"].unique())
+    tourney = utils.load_tourney(gender)
 
-    elo: dict  = {}   # {TeamID: current_elo}  — persists across seasons
-    records    = []
+    # Gender-specific parameters (Haupts-tuned)
+    if gender == "M":
+        k, reg_w, tourn_w = 125, 1.0, 0.75
+    else:
+        k, reg_w, tourn_w = 190, 0.95, 1.0
 
-    for season in seasons:
-        season_games = comp[comp["Season"] == season].sort_values("DayNum")
-        teams        = set(season_games["WTeamID"]) | set(season_games["LTeamID"])
+    initial_rating = width = 1200.0
 
-        # Carryover / initialise
-        for tid in teams:
-            elo[tid] = elo[tid] * 0.75 + 1500 * 0.25 if tid in elo else 1500.0
+    # Build combined game log with game-type weights
+    reg = comp[["Season", "DayNum", "WTeamID", "LTeamID", "WScore", "LScore"]].copy()
+    reg["is_tourney"] = 0
+    reg["weight"]     = reg_w
 
-        k_wins: dict = {tid: 0.0 for tid in teams}
+    trn = tourney[["Season", "DayNum", "WTeamID", "LTeamID", "WScore", "LScore"]].copy()
+    trn["is_tourney"] = 1
+    trn["weight"]     = tourn_w
 
-        for row in season_games.itertuples(index=False):
-            w      = int(row.WTeamID)
-            l      = int(row.LTeamID)
-            margin = max(float(row.WScore - row.LScore), 1.0)
-            ew, el = elo.get(w, 1500.0), elo.get(l, 1500.0)
-            exp_w  = 1.0 / (1.0 + 10.0 ** ((el - ew) / 400.0))
-            k_eff  = 20.0 * (1.0 + margin / 20.0) ** 0.6
-            delta  = k_eff * (1.0 - exp_w)
-            elo[w] += delta
-            elo[l] -= delta
-            k_wins[w] += k_eff
+    all_games = (
+        pd.concat([reg, trn], ignore_index=True)
+        .sort_values(["Season", "DayNum"])
+        .reset_index(drop=True)
+    )
 
-        for tid in teams:
-            records.append({
-                "Season":              season,
-                "TeamID":              tid,
-                "elo_rating":          elo[tid],
-                "elo_k_weighted_wins": k_wins[tid],
-            })
+    # Process all games chronologically — ratings accumulate continuously
+    team_elo: dict = {}
+    records = []
 
-    result = pd.DataFrame(records)
-    result["elo_rating"]          = result["elo_rating"].astype(float)
-    result["elo_k_weighted_wins"] = result["elo_k_weighted_wins"].astype(float)
-    return result
+    for row in all_games.itertuples(index=False):
+        w = int(row.WTeamID)
+        l = int(row.LTeamID)
+        if w not in team_elo:
+            team_elo[w] = initial_rating
+        if l not in team_elo:
+            team_elo[l] = initial_rating
+
+        ew, el = team_elo[w], team_elo[l]
+        exp_w  = 1.0 / (1.0 + 10.0 ** ((el - ew) / width))
+        margin = max(float(row.WScore - row.LScore), 1.0)
+        k_eff  = k * float(row.weight) * (1.0 + margin / 20.0) ** 0.6
+        delta  = k_eff * (1.0 - exp_w)
+
+        team_elo[w] += delta
+        team_elo[l] -= delta
+
+        records.append({"Season": int(row.Season), "DayNum": int(row.DayNum),
+                         "TeamID": w, "Rating": team_elo[w], "is_tourney": int(row.is_tourney)})
+        records.append({"Season": int(row.Season), "DayNum": int(row.DayNum),
+                         "TeamID": l, "Rating": team_elo[l], "is_tourney": int(row.is_tourney)})
+
+    rating_df = pd.DataFrame(records)
+
+    # Summary stats — regular season games only
+    reg_df = (
+        rating_df[rating_df["is_tourney"] == 0]
+        .sort_values(["TeamID", "Season", "DayNum"])
+        .copy()
+    )
+
+    grp = reg_df.groupby(["Season", "TeamID"])["Rating"]
+
+    results = pd.DataFrame({
+        "elo_mean":   grp.mean(),
+        "elo_median": grp.median(),
+        "elo_std":    grp.std(),
+        "elo_min":    grp.min(),
+        "elo_max":    grp.max(),
+        "elo_last":   grp.last(),
+    }).reset_index()
+
+    # Trend: linear regression slope of rating over the season
+    def _trend(x: pd.Series) -> float:
+        if len(x) < 2:
+            return 0.0
+        return float(linregress(range(len(x)), x.values).slope)
+
+    trend_s = (
+        reg_df.groupby(["Season", "TeamID"])["Rating"]
+        .apply(_trend)
+        .reset_index(name="elo_trend")
+    )
+
+    results = results.merge(trend_s, on=["Season", "TeamID"], how="left")
+    # Single-game seasons have no std — fill with 0
+    results["elo_std"] = results["elo_std"].fillna(0.0)
+
+    return results[["Season", "TeamID",
+                    "elo_last", "elo_mean", "elo_median",
+                    "elo_std", "elo_min", "elo_max", "elo_trend"]].copy()
 
 
 # ── Section 10: Massey PCA — all systems with >= 50% coverage ─────────────────
@@ -617,7 +673,6 @@ def build_momentum_features(gender: str, n_games: int = 10) -> pd.DataFrame:
                             e.g. +5 = 5-game win streak, -2 = 2-game losing streak
     """
     comp = utils.load_compact(gender)
-    comp = comp[comp["DayNum"] < 132].copy()   # regular season only; exclude conf tourneys
 
     # Build long format: one row per (Season, TeamID, game)
     win_rows = comp[["Season", "DayNum", "WTeamID", "WScore", "LScore"]].copy()
@@ -707,6 +762,168 @@ def build_coach_features() -> pd.DataFrame:
     return primary[["Season", "TeamID", "coach_years_at_school", "is_new_coach"]].copy()
 
 
+# ── Section 11: Historical tournament performance (last 3 seasons) ────────────
+
+def build_tourney_history_features(gender: str, n_seasons: int = 3) -> pd.DataFrame:
+    """
+    For each (Season S, TeamID), aggregate NCAA tournament game data from
+    seasons S-1, S-2, ..., S-n_seasons.
+
+    Leakage safeguard: only seasons strictly < S are used — never season S.
+
+    Returns 3 features:
+      - tourney_win_pct_hist:       win rate across all tourney games in last n seasons
+      - tourney_net_margin_hist:    average net scoring margin in tourney games
+      - tourney_rounds_advanced_avg: average wins per appearance (0=R1 exit, 6=champion)
+
+    Teams with no prior appearances: win_pct and net_margin are NaN (imputed to
+    population median downstream); rounds_advanced is 0.
+    """
+    tourney = utils.load_tourney(gender)
+
+    # Build long format: one row per (Season, TeamID, game)
+    win_rows = tourney[["Season", "WTeamID", "WScore", "LScore"]].copy()
+    win_rows["TeamID"] = win_rows["WTeamID"]
+    win_rows["won"]    = 1
+    win_rows["margin"] = win_rows["WScore"] - win_rows["LScore"]
+
+    loss_rows = tourney[["Season", "LTeamID", "WScore", "LScore"]].copy()
+    loss_rows["TeamID"] = loss_rows["LTeamID"]
+    loss_rows["won"]    = 0
+    loss_rows["margin"] = loss_rows["LScore"] - loss_rows["WScore"]
+
+    games = pd.concat([
+        win_rows[["Season", "TeamID", "won", "margin"]],
+        loss_rows[["Season", "TeamID", "won", "margin"]],
+    ], ignore_index=True)
+
+    # All (Season, TeamID) pairs that ever played in a tournament
+    all_seasons = sorted(tourney["Season"].unique())
+    all_teams   = sorted(tourney[["WTeamID", "LTeamID"]].stack().unique())
+
+    rows = []
+    for season in all_seasons:
+        past = games[
+            (games["Season"] >= season - n_seasons) &
+            (games["Season"] < season)
+        ]
+        if past.empty:
+            continue
+
+        grp = past.groupby("TeamID")
+        wins    = grp["won"].sum()
+        totals  = grp["won"].count()
+        margins = grp["margin"].mean()
+
+        # rounds_advanced: wins per appearance, per past season
+        rounds_per_season = (
+            past.groupby(["TeamID", "Season"])["won"].sum().reset_index()
+        )
+        rounds_avg = rounds_per_season.groupby("TeamID")["won"].mean()
+
+        for team in all_teams:
+            row = {"Season": season, "TeamID": team}
+            if team in totals.index and totals[team] > 0:
+                row["tourney_win_pct_hist"]        = wins[team] / totals[team]
+                row["tourney_net_margin_hist"]      = margins[team]
+            else:
+                row["tourney_win_pct_hist"]        = np.nan
+                row["tourney_net_margin_hist"]      = np.nan
+            row["tourney_rounds_advanced_avg"] = float(rounds_avg.get(team, 0.0))
+            rows.append(row)
+
+    return pd.DataFrame(rows)[
+        ["Season", "TeamID", "tourney_win_pct_hist",
+         "tourney_net_margin_hist", "tourney_rounds_advanced_avg"]
+    ].copy()
+
+
+# ── Section 12: Tournament box score efficiency (last 3 seasons) ──────────────
+
+def build_tourney_efficiency_features(gender: str, n_seasons: int = 3) -> pd.DataFrame:
+    """
+    Possession-adjusted offensive and defensive efficiency from prior NCAA
+    tournament box scores.
+
+    For each (Season S, TeamID), aggregate detailed box score data from
+    seasons S-1 through S-n_seasons.
+
+    Leakage safeguard: only seasons strictly < S are used — never season S.
+
+    Returns 2 features:
+      - tourney_off_eff_hist:  offensive efficiency in prior tourney games (pts/100 poss)
+      - tourney_def_eff_hist:  defensive efficiency in prior tourney games (opp pts/100 poss)
+
+    Teams with no prior appearances: both features are NaN (imputed downstream).
+    """
+    tourney_d = utils.load_tourney_detailed(gender)
+
+    def possessions(fga, fta, orb, tov):
+        """Estimate possessions using the standard formula."""
+        return fga - orb + tov + 0.44 * fta
+
+    # Winner stats
+    w_rows = tourney_d.copy()
+    w_rows["TeamID"]   = w_rows["WTeamID"]
+    w_rows["pts"]      = w_rows["WScore"]
+    w_rows["opp_pts"]  = w_rows["LScore"]
+    w_rows["poss"]     = possessions(
+        w_rows["WFGA"], w_rows["WFTA"], w_rows["WOR"], w_rows["WTO"]
+    )
+    w_rows["opp_poss"] = possessions(
+        w_rows["LFGA"], w_rows["LFTA"], w_rows["LOR"], w_rows["LTO"]
+    )
+
+    # Loser stats
+    l_rows = tourney_d.copy()
+    l_rows["TeamID"]   = l_rows["LTeamID"]
+    l_rows["pts"]      = l_rows["LScore"]
+    l_rows["opp_pts"]  = l_rows["WScore"]
+    l_rows["poss"]     = possessions(
+        l_rows["LFGA"], l_rows["LFTA"], l_rows["LOR"], l_rows["LTO"]
+    )
+    l_rows["opp_poss"] = possessions(
+        l_rows["WFGA"], l_rows["WFTA"], l_rows["WOR"], l_rows["WTO"]
+    )
+
+    cols = ["Season", "TeamID", "pts", "opp_pts", "poss", "opp_poss"]
+    games = pd.concat([w_rows[cols], l_rows[cols]], ignore_index=True)
+
+    all_seasons = sorted(tourney_d["Season"].unique())
+    all_teams   = sorted(
+        pd.concat([tourney_d["WTeamID"], tourney_d["LTeamID"]]).unique()
+    )
+
+    rows = []
+    for season in all_seasons:
+        past = games[
+            (games["Season"] >= season - n_seasons) &
+            (games["Season"] < season)
+        ]
+        if past.empty:
+            continue
+
+        grp = past.groupby("TeamID")
+        total_pts     = grp["pts"].sum()
+        total_opp_pts = grp["opp_pts"].sum()
+        total_poss    = grp["poss"].sum()
+        total_opp_p   = grp["opp_poss"].sum()
+
+        for team in all_teams:
+            row = {"Season": season, "TeamID": team}
+            if team in total_poss.index and total_poss[team] > 0:
+                row["tourney_off_eff_hist"] = 100.0 * total_pts[team] / total_poss[team]
+                row["tourney_def_eff_hist"] = 100.0 * total_opp_pts[team] / total_opp_p[team]
+            else:
+                row["tourney_off_eff_hist"] = np.nan
+                row["tourney_def_eff_hist"] = np.nan
+            rows.append(row)
+
+    return pd.DataFrame(rows)[
+        ["Season", "TeamID", "tourney_off_eff_hist", "tourney_def_eff_hist"]
+    ].copy()
+
+
 # ── Section 4: Merge and save ─────────────────────────────────────────────────
 
 def build_and_save(gender: str) -> pd.DataFrame:
@@ -785,12 +1002,25 @@ def build_and_save(gender: str) -> pd.DataFrame:
         df["massey_pc1"] = np.nan
         df["massey_pc2"] = np.nan
 
-    # 10. Momentum features (last 10 regular season games)
+    # 10. Momentum features (last 10 regular season + conf tourney games)
     momentum_feats = build_momentum_features(gender)
     print(f"  Momentum features:   {momentum_feats.shape}")
     df = df.merge(momentum_feats, on=["Season", "TeamID"], how="left")
 
-    # 11. Verify uniqueness
+    # 11. Historical tournament performance (last 3 seasons)
+    tourney_hist_feats = build_tourney_history_features(gender)
+    print(f"  Tourney history features: {tourney_hist_feats.shape}")
+    df = df.merge(tourney_hist_feats, on=["Season", "TeamID"], how="left")
+    # Teams with no prior appearances: rounds_advanced already 0; win_pct/margin = NaN
+    df["tourney_rounds_advanced_avg"] = df["tourney_rounds_advanced_avg"].fillna(0.0)
+
+    # 12. Tournament box score efficiency (last 3 seasons)
+    tourney_eff_feats = build_tourney_efficiency_features(gender)
+    print(f"  Tourney efficiency features: {tourney_eff_feats.shape}")
+    df = df.merge(tourney_eff_feats, on=["Season", "TeamID"], how="left")
+    # Teams with no prior appearances: both NaN — imputed to median downstream
+
+    # 13. Verify uniqueness
     n_dupes = df.duplicated(subset=["Season", "TeamID"]).sum()
     if n_dupes > 0:
         print(f"  WARNING: {n_dupes} duplicate (Season, TeamID) rows — dropping extras")
@@ -798,12 +1028,12 @@ def build_and_save(gender: str) -> pd.DataFrame:
 
     df = df.sort_values(["Season", "TeamID"]).reset_index(drop=True)
 
-    # 11. Save
+    # 14. Save
     utils.FEATURES.mkdir(parents=True, exist_ok=True)
     out_path = utils.FEATURES / f"team_features_{gender}.parquet"
     df.to_parquet(out_path, index=False)
 
-    # 12. Summary
+    # 15. Summary
     season_min = df["Season"].min()
     season_max = df["Season"].max()
     nan_counts = df.isnull().sum()
