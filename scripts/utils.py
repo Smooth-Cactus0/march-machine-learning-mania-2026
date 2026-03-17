@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime
 
 ROOT = Path(__file__).parent.parent
-DATA = ROOT / "march-machine-learning-mania-2026"
+DATA = ROOT / "march-machine-learning-mania-2026_latest"
 FEATURES = ROOT / "features"
 MODELS = ROOT / "models"
 RESULTS = ROOT / "results"

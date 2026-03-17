@@ -18,7 +18,7 @@ CV Brier scores for all models (lower is better). Auto-updated by training scrip
 | lgbm_v2 | M | 0.203346 | LGBMClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 16:00 |
 | lgbm_v3 | M | 0.189912 | lgbm Optuna n=50 best_brier=0.1899 | 2026-03-03 14:06 |
 | meta_v1 | M | 0.185873 | LogReg meta-learner on logit OOF (mean=0.1885 -> meta=0.1859) | 2026-03-03 14:23 |
-| meta_v2 | M | 0.188157 | logreg meta-learner (lgbm=0.1919 logreg=0.1882) | 2026-03-03 16:06 |
+| meta_v2 | M | 0.188157 | logreg meta-learner (lgbm=0.1919 logreg=0.1882) | 2026-03-17 21:28 |
 | xgb_v1 | M | 0.203340 | XGBClassifier n=500 lr=0.05 md=4 | 2026-02-27 16:15 |
 | xgb_v2 | M | 0.204288 | XGBClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 16:00 |
 | xgb_v3 | M | 0.188592 | xgb Optuna n=50 best_brier=0.1886 | 2026-03-03 14:07 |
@@ -34,7 +34,7 @@ CV Brier scores for all models (lower is better). Auto-updated by training scrip
 | lgbm_v2 | W | 0.169039 | LGBMClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 16:00 |
 | lgbm_v3 | W | 0.144562 | lgbm Optuna n=50 best_brier=0.1446 | 2026-03-03 14:16 |
 | meta_v1 | W | 0.143398 | LogReg meta-learner on logit OOF (mean=0.1442 -> meta=0.1434) | 2026-03-03 14:23 |
-| meta_v2 | W | 0.146662 | logreg meta-learner (lgbm=0.1489 logreg=0.1467) | 2026-03-03 16:06 |
+| meta_v2 | W | 0.146662 | logreg meta-learner (lgbm=0.1489 logreg=0.1467) | 2026-03-17 21:28 |
 | xgb_v1 | W | 0.172000 | XGBClassifier n=500 lr=0.05 md=4 | 2026-02-27 16:15 |
 | xgb_v2 | W | 0.170134 | XGBClassifier n=500 lr=0.05 md=4 curated-feats | 2026-03-03 16:00 |
 | xgb_v3 | W | 0.146638 | xgb Optuna n=50 best_brier=0.1466 | 2026-03-03 14:17 |
